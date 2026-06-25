@@ -1,0 +1,173 @@
+import { NextResponse } from "next/server";
+import { getSessionUser } from "@/lib/auth";
+import { sendCampaignSchema } from "@/lib/validation";
+import { sendTemplateMessage } from "@/lib/whatsapp";
+import { isWhatsappConfigured, publicConfig } from "@/lib/config";
+import type { Contact } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+// Allow up to 60s on Vercel for medium batches. For very large lists, send in
+// multiple campaigns or move sending to a background worker (see README).
+export const maxDuration = 60;
+
+const CONCURRENCY = 5;
+
+export async function POST(req: Request) {
+  const { supabase, user } = await getSessionUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isWhatsappConfigured()) {
+    return NextResponse.json(
+      {
+        error:
+          "WhatsApp is not configured. Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID.",
+      },
+      { status: 400 },
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const parsed = sendCampaignSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Invalid input." },
+      { status: 400 },
+    );
+  }
+
+  const imageUrl =
+    parsed.data.imageUrl && parsed.data.imageUrl.length > 0
+      ? parsed.data.imageUrl
+      : publicConfig.whatsappImageUrl;
+  const templateName =
+    parsed.data.templateName || publicConfig.whatsappTemplateName;
+
+  // Load recipients.
+  const { data: contactsData, error: contactsError } = await supabase
+    .from("contacts")
+    .select("id, name, phone, token")
+    .order("created_at", { ascending: true });
+
+  if (contactsError) {
+    return NextResponse.json({ error: contactsError.message }, { status: 500 });
+  }
+
+  const contacts = (contactsData ?? []) as Pick<
+    Contact,
+    "id" | "name" | "phone" | "token"
+  >[];
+
+  if (contacts.length === 0) {
+    return NextResponse.json(
+      { error: "No contacts to message. Import a CSV first." },
+      { status: 400 },
+    );
+  }
+
+  // Create the campaign row up front (status: sending).
+  const { data: campaign, error: campaignError } = await supabase
+    .from("campaigns")
+    .insert({
+      name: parsed.data.name,
+      template_name: templateName,
+      image_url: imageUrl || null,
+      form_base_url: `${publicConfig.appUrl}/form/`,
+      message_body:
+        "Hi {{customer_name}}, Thank you for your interest in Hayat Interiors. Please fill the following form.",
+      total_contacts: contacts.length,
+      status: "sending",
+      created_by: user.id,
+    })
+    .select("id")
+    .single();
+
+  if (campaignError || !campaign) {
+    return NextResponse.json(
+      { error: campaignError?.message ?? "Could not create campaign." },
+      { status: 500 },
+    );
+  }
+
+  // Send with limited concurrency.
+  type Outcome = {
+    contact: (typeof contacts)[number];
+    status: "sent" | "failed";
+    messageId?: string;
+    error?: string;
+  };
+  const outcomes: Outcome[] = new Array(contacts.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < contacts.length) {
+      const i = cursor++;
+      const c = contacts[i];
+      const result = await sendTemplateMessage({
+        to: c.phone,
+        customerName: c.name,
+        token: c.token,
+        templateName,
+        imageUrl,
+      });
+      outcomes[i] = {
+        contact: c,
+        status: result.status,
+        messageId: result.messageId,
+        error: result.error,
+      };
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, contacts.length) }, worker),
+  );
+
+  // Persist per-contact message rows.
+  const messageRows = outcomes.map((o) => ({
+    campaign_id: campaign.id,
+    contact_id: o.contact.id,
+    phone: o.contact.phone,
+    wa_message_id: o.messageId ?? null,
+    status: o.status,
+    error: o.error ?? null,
+  }));
+
+  const { error: messagesError } = await supabase
+    .from("messages")
+    .insert(messageRows);
+  if (messagesError) {
+    // Non-fatal: messages couldn't be logged, but sends may have happened.
+    console.error("Failed to insert message rows:", messagesError.message);
+  }
+
+  const sent = outcomes.filter((o) => o.status === "sent").length;
+  const failed = outcomes.length - sent;
+
+  await supabase
+    .from("campaigns")
+    .update({
+      messages_sent: sent,
+      messages_failed: failed,
+      status: sent > 0 ? "completed" : "failed",
+      sent_at: new Date().toISOString(),
+    })
+    .eq("id", campaign.id);
+
+  return NextResponse.json({
+    campaignId: campaign.id,
+    total: contacts.length,
+    sent,
+    failed,
+    // Surface a sample error to help debugging template/setup issues.
+    sampleError: outcomes.find((o) => o.status === "failed")?.error ?? null,
+  });
+}

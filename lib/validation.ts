@@ -1,0 +1,51 @@
+import { z } from "zod";
+
+/** Public customer form submission. */
+export const responseSchema = z.object({
+  token: z.string().trim().max(64).optional().nullable(),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Please enter your name")
+    .max(120, "Name is too long"),
+  phone: z
+    .string()
+    .trim()
+    .min(6, "Please enter a valid phone number")
+    .max(20, "Phone number is too long"),
+  interest_status: z.enum(["interested", "not_interested"], {
+    errorMap: () => ({ message: "Please select your interest" }),
+  }),
+  requirement_details: z.string().trim().max(2000).optional().default(""),
+  notes: z.string().trim().max(2000).optional().default(""),
+});
+
+export type ResponseInput = z.infer<typeof responseSchema>;
+
+/** A single contact accepted by the CSV upload route. */
+export const uploadContactSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  phone: z.string().trim().min(8).max(15),
+});
+
+export const uploadContactsSchema = z.object({
+  contacts: z.array(uploadContactSchema).min(1, "No valid contacts to import"),
+});
+
+/** Campaign send request from the admin dashboard. */
+export const sendCampaignSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Campaign name is required")
+    .max(120, "Campaign name is too long"),
+  templateName: z.string().trim().max(120).optional(),
+  imageUrl: z
+    .string()
+    .trim()
+    .url("Image URL must be a valid https URL")
+    .optional()
+    .or(z.literal("")),
+});
+
+export type SendCampaignInput = z.infer<typeof sendCampaignSchema>;
