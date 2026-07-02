@@ -51,10 +51,11 @@ export async function POST(req: Request) {
   const templateName =
     parsed.data.templateName || publicConfig.whatsappTemplateName;
 
-  // Load recipients.
+  // Load recipients — restricted to the selected contact ids.
   const { data: contactsData, error: contactsError } = await supabase
     .from("contacts")
     .select("id, name, phone, token")
+    .in("id", parsed.data.contactIds)
     .order("created_at", { ascending: true });
 
   if (contactsError) {
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
 
   if (contacts.length === 0) {
     return NextResponse.json(
-      { error: "No contacts to message. Import a CSV first." },
+      { error: "No matching contacts to message. Select at least one contact." },
       { status: 400 },
     );
   }

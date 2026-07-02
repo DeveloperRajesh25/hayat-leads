@@ -32,6 +32,22 @@ export const uploadContactsSchema = z.object({
   contacts: z.array(uploadContactSchema).min(1, "No valid contacts to import"),
 });
 
+/** Single contact added manually from the admin dashboard. */
+export const createContactSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Please enter a name")
+    .max(120, "Name is too long"),
+  phone: z
+    .string()
+    .trim()
+    .min(6, "Please enter a valid phone number")
+    .max(20, "Phone number is too long"),
+});
+
+export type CreateContactInput = z.infer<typeof createContactSchema>;
+
 /** Campaign send request from the admin dashboard. */
 export const sendCampaignSchema = z.object({
   name: z
@@ -46,6 +62,7 @@ export const sendCampaignSchema = z.object({
     .url("Image URL must be a valid https URL")
     .optional()
     .or(z.literal("")),
+  contactIds: z.array(z.string().uuid()).min(1, "Select at least one contact"),
 });
 
 export type SendCampaignInput = z.infer<typeof sendCampaignSchema>;

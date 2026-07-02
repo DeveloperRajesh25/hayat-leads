@@ -1,17 +1,16 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Users, ExternalLink } from "lucide-react";
+import { Users } from "lucide-react";
 import { getSessionUser } from "@/lib/auth";
 import { PageHeader } from "@/components/admin/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { CsvUploader } from "@/components/contacts/csv-uploader";
+import { AddContactForm } from "@/components/contacts/add-contact-form";
+import { ContactActions } from "@/components/contacts/contact-actions";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
-import { WhatsAppButton } from "@/components/leads/whatsapp-button";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { formatDateTime } from "@/lib/utils";
-import { buildFormUrl } from "@/lib/config";
 import type { Contact } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Contacts" };
@@ -41,7 +40,10 @@ export default async function ContactsPage() {
         description="Import your leads from a CSV file. Duplicate phone numbers are skipped automatically."
       />
 
-      <CsvUploader />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <CsvUploader />
+        <AddContactForm />
+      </div>
 
       <Card className="mt-8">
         <div className="flex items-center justify-between border-b border-slate-100 p-5">
@@ -89,17 +91,12 @@ export default async function ContactsPage() {
                       {formatDateTime(c.created_at)}
                     </TD>
                     <TD>
-                      <div className="flex items-center justify-end gap-2">
-                        <Link
-                          href={buildFormUrl(c.token)}
-                          target="_blank"
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                          Form
-                        </Link>
-                        <WhatsAppButton phone={c.phone} name={c.name} label="Chat" />
-                      </div>
+                      <ContactActions
+                        id={c.id}
+                        name={c.name}
+                        phone={c.phone}
+                        token={c.token}
+                      />
                     </TD>
                   </TR>
                 ))}

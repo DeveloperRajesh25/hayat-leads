@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Send,
@@ -8,12 +8,16 @@ import {
   AlertTriangle,
   CheckCircle2,
   Users,
+  Search,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { formatPhoneDisplay } from "@/lib/phone";
 import { publicConfig } from "@/lib/config";
+import type { Contact } from "@/lib/types";
 
 interface SendResult {
   total: number;
@@ -23,10 +27,12 @@ interface SendResult {
 }
 
 export function SendCampaignForm({
-  contactCount,
+  contacts,
+  alreadyMessagedIds,
   configured,
 }: {
-  contactCount: number;
+  contacts: Pick<Contact, "id" | "name" | "phone">[];
+  alreadyMessagedIds: string[];
   configured: boolean;
 }) {
   const router = useRouter();
@@ -36,8 +42,49 @@ export function SendCampaignForm({
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<SendResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
-  const disabled = contactCount === 0 || !configured;
+  const alreadyMessagedSet = useMemo(
+    () => new Set(alreadyMessagedIds),
+    [alreadyMessagedIds],
+  );
+
+  // Default: new contacts selected, contacts already messaged unselected.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(contacts.filter((c) => !alreadyMessagedSet.has(c.id)).map((c) => c.id)),
+  );
+
+  const filteredContacts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return contacts;
+    return contacts.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) || c.phone.toLowerCase().includes(q),
+    );
+  }, [contacts, search]);
+
+  function toggle(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setSelectedIds(new Set(filteredContacts.map((c) => c.id)));
+  }
+
+  function selectNone() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const c of filteredContacts) next.delete(c.id);
+      return next;
+    });
+  }
+
+  const disabled = contacts.length === 0 || !configured;
 
   async function handleSend() {
     setSending(true);
@@ -50,6 +97,7 @@ export function SendCampaignForm({
         body: JSON.stringify({
           name: name.trim() || `Campaign ${new Date().toLocaleDateString()}`,
           imageUrl: imageUrl.trim(),
+          contactIds: Array.from(selectedIds),
         }),
       });
       const data = await res.json();
@@ -73,7 +121,7 @@ export function SendCampaignForm({
       <CardHeader>
         <CardTitle>New campaign</CardTitle>
         <p className="text-sm text-slate-500">
-          Sends the WhatsApp template to all imported contacts, personalized
+          Sends the WhatsApp template to the selected contacts, personalized
           with each customer&apos;s name and form link.
         </p>
       </CardHeader>
@@ -119,13 +167,82 @@ export function SendCampaignForm({
           </p>
         </div>
 
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <Label className="mb-0">Recipients</Label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={selectAll}
+                className="text-xs font-medium text-brand-600 hover:underline"
+              >
+                Select all
+              </button>
+              <span className="text-xs text-slate-300">·</span>
+              <button
+                type="button"
+                onClick={selectNone}
+                className="text-xs font-medium text-brand-600 hover:underline"
+              >
+                Select none
+              </button>
+            </div>
+          </div>
+
+          <div className="relative mb-2">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Search contacts…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+              disabled={sending}
+            />
+          </div>
+
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-200">
+            {filteredContacts.length === 0 ? (
+              <p className="p-4 text-center text-sm text-slate-400">
+                No contacts match your search.
+              </p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {filteredContacts.map((c) => (
+                  <li key={c.id}>
+                    <label className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(c.id)}
+                        onChange={() => toggle(c.id)}
+                        disabled={sending}
+                        className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500/30"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-slate-800">
+                          {c.name}
+                        </span>
+                        <span className="block text-xs text-slate-400">
+                          {formatPhoneDisplay(c.phone)}
+                        </span>
+                      </span>
+                      {alreadyMessagedSet.has(c.id) && (
+                        <Badge tone="neutral">Already sent</Badge>
+                      )}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
         <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
           <Users className="h-4 w-4 text-slate-400" />
           <span>
             <span className="font-semibold text-slate-900">
-              {contactCount.toLocaleString()}
+              {selectedIds.size.toLocaleString()}
             </span>{" "}
-            contact{contactCount === 1 ? "" : "s"} will receive this message.
+            of {contacts.length.toLocaleString()} contacts selected.
           </span>
         </div>
 
@@ -162,7 +279,7 @@ export function SendCampaignForm({
               setError(null);
               setConfirming(true);
             }}
-            disabled={disabled}
+            disabled={disabled || selectedIds.size === 0}
           >
             <Send className="h-4 w-4" />
             Send campaign
@@ -170,8 +287,8 @@ export function SendCampaignForm({
         ) : (
           <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-amber-800">
-              Send WhatsApp messages to {contactCount.toLocaleString()}{" "}
-              contacts now?
+              Send WhatsApp messages to {selectedIds.size.toLocaleString()}{" "}
+              contact{selectedIds.size === 1 ? "" : "s"} now?
             </p>
             <div className="flex items-center gap-2">
               <Button

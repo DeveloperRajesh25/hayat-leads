@@ -9,7 +9,7 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib/utils";
-import type { Campaign, CampaignStatus } from "@/lib/types";
+import type { Campaign, CampaignStatus, Contact } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Campaigns" };
 export const dynamic = "force-dynamic";
@@ -24,9 +24,28 @@ const STATUS_TONE: Record<CampaignStatus, BadgeTone> = {
 export default async function CampaignsPage() {
   const { supabase } = await getSessionUser();
 
-  const { count } = await supabase
+  const { data: contactsData } = await supabase
     .from("contacts")
-    .select("*", { count: "exact", head: true });
+    .select("id, name, phone")
+    .order("created_at", { ascending: false });
+  const contacts = (contactsData ?? []) as Pick<
+    Contact,
+    "id" | "name" | "phone"
+  >[];
+
+  // Contacts who already received a successful message in a previous
+  // campaign — unselected by default when composing a new one.
+  const { data: sentMessages } = await supabase
+    .from("messages")
+    .select("contact_id")
+    .in("status", ["sent", "delivered", "read"]);
+  const alreadyMessagedIds = Array.from(
+    new Set(
+      (sentMessages ?? [])
+        .map((m) => m.contact_id)
+        .filter((id): id is string => !!id),
+    ),
+  );
 
   const { data } = await supabase
     .from("campaigns")
@@ -39,13 +58,14 @@ export default async function CampaignsPage() {
     <div>
       <PageHeader
         title="Campaigns"
-        description="Send your WhatsApp template to all contacts and track delivery."
+        description="Send your WhatsApp template to selected contacts and track delivery."
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <div className="lg:col-span-2">
           <SendCampaignForm
-            contactCount={count ?? 0}
+            contacts={contacts}
+            alreadyMessagedIds={alreadyMessagedIds}
             configured={isWhatsappConfigured()}
           />
         </div>
