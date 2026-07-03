@@ -44,10 +44,6 @@ export async function POST(req: Request) {
     );
   }
 
-  const imageUrl =
-    parsed.data.imageUrl && parsed.data.imageUrl.length > 0
-      ? parsed.data.imageUrl
-      : publicConfig.whatsappImageUrl;
   const templateName =
     parsed.data.templateName || publicConfig.whatsappTemplateName;
 
@@ -80,7 +76,6 @@ export async function POST(req: Request) {
     .insert({
       name: parsed.data.name,
       template_name: templateName,
-      image_url: imageUrl || null,
       form_base_url: `${publicConfig.appUrl}/form/`,
       message_body:
         "Hi {{customer_name}}, Thank you for your interest in Hayat Interiors. Please fill the following form.",
@@ -117,7 +112,6 @@ export async function POST(req: Request) {
         customerName: c.name,
         token: c.token,
         templateName,
-        imageUrl,
       });
       outcomes[i] = {
         contact: c,

@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Send,
-  Image as ImageIcon,
   AlertTriangle,
   CheckCircle2,
   Users,
@@ -16,7 +15,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { formatPhoneDisplay } from "@/lib/phone";
-import { publicConfig } from "@/lib/config";
 import type { Contact } from "@/lib/types";
 
 interface SendResult {
@@ -37,7 +35,6 @@ export function SendCampaignForm({
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [imageUrl, setImageUrl] = useState(publicConfig.whatsappImageUrl);
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<SendResult | null>(null);
@@ -96,7 +93,6 @@ export function SendCampaignForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim() || `Campaign ${new Date().toLocaleDateString()}`,
-          imageUrl: imageUrl.trim(),
           contactIds: Array.from(selectedIds),
         }),
       });
@@ -146,25 +142,6 @@ export function SendCampaignForm({
             onChange={(e) => setName(e.target.value)}
             disabled={sending}
           />
-        </div>
-
-        <div>
-          <Label htmlFor="image-url">
-            <span className="inline-flex items-center gap-1">
-              <ImageIcon className="h-3.5 w-3.5" /> Header image URL
-            </span>
-          </Label>
-          <Input
-            id="image-url"
-            placeholder="https://…/banner.jpg"
-            value={imageUrl}
-            onChange={(e) => setImageUrl(e.target.value)}
-            disabled={sending}
-          />
-          <p className="mt-1 text-xs text-slate-400">
-            Sent to every customer. Defaults to
-            <code className="mx-1">NEXT_PUBLIC_WHATSAPP_IMAGE_URL</code>.
-          </p>
         </div>
 
         <div>

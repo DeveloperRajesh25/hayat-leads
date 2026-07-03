@@ -34,7 +34,6 @@ export const publicConfig = {
     process.env.NEXT_PUBLIC_WHATSAPP_TEMPLATE_NAME ?? "hayat_interiors_intro",
   whatsappTemplateLang:
     process.env.NEXT_PUBLIC_WHATSAPP_TEMPLATE_LANG ?? "en",
-  whatsappImageUrl: process.env.NEXT_PUBLIC_WHATSAPP_IMAGE_URL ?? "",
   defaultCountryCode:
     process.env.NEXT_PUBLIC_DEFAULT_COUNTRY_CODE ?? "91",
 } as const;

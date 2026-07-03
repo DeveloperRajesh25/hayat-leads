@@ -56,12 +56,6 @@ export const sendCampaignSchema = z.object({
     .min(1, "Campaign name is required")
     .max(120, "Campaign name is too long"),
   templateName: z.string().trim().max(120).optional(),
-  imageUrl: z
-    .string()
-    .trim()
-    .url("Image URL must be a valid https URL")
-    .optional()
-    .or(z.literal("")),
   contactIds: z.array(z.string().uuid()).min(1, "Select at least one contact"),
 });
 
