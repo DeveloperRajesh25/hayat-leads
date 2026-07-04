@@ -26,6 +26,7 @@ export async function getDashboardStats(
     messagesSent,
     interested,
     notInterested,
+    converted,
   ] = await Promise.all([
     countAll(supabase, "contacts"),
     countAll(supabase, "responses"),
@@ -54,6 +55,14 @@ export async function getDashboardStats(
         if (error) throw error;
         return count ?? 0;
       }),
+    supabase
+      .from("responses")
+      .select("*", { count: "exact", head: true })
+      .eq("converted", true)
+      .then(({ count, error }) => {
+        if (error) throw error;
+        return count ?? 0;
+      }),
   ]);
 
   // Pending = contacts we reached out to that have not responded yet.
@@ -67,5 +76,6 @@ export async function getDashboardStats(
     pending,
     totalResponses,
     totalCampaigns,
+    converted,
   };
 }

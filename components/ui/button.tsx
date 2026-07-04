@@ -12,14 +12,14 @@ export type ButtonVariant =
 export type ButtonSize = "sm" | "md" | "lg" | "icon";
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap";
+  "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap dark:focus-visible:ring-offset-slate-950";
 
 const variants: Record<ButtonVariant, string> = {
   primary: "bg-brand-600 text-white hover:bg-brand-700",
-  secondary: "bg-slate-900 text-white hover:bg-slate-800",
+  secondary: "bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white",
   outline:
-    "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
-  ghost: "text-slate-600 hover:bg-slate-100",
+    "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800",
+  ghost: "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
   danger: "bg-red-600 text-white hover:bg-red-700",
   success: "bg-emerald-600 text-white hover:bg-emerald-700",
 };

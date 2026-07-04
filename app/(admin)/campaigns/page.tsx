@@ -72,8 +72,8 @@ export default async function CampaignsPage() {
 
         <div className="lg:col-span-3">
           <Card>
-            <div className="border-b border-slate-100 p-5">
-              <h2 className="text-base font-semibold text-slate-900">
+            <div className="border-b border-slate-100 p-5 dark:border-slate-800">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">
                 Campaign history
               </h2>
             </div>
@@ -101,18 +101,18 @@ export default async function CampaignsPage() {
                     {campaigns.map((c) => (
                       <TR key={c.id}>
                         <TD>
-                          <div className="font-medium text-slate-900">
+                          <div className="font-medium text-slate-900 dark:text-slate-100">
                             {c.name}
                           </div>
-                          <div className="text-xs text-slate-400">
+                          <div className="text-xs text-slate-400 dark:text-slate-500">
                             {formatDateTime(c.sent_at ?? c.created_at)}
                           </div>
                         </TD>
                         <TD className="text-center">{c.total_contacts}</TD>
-                        <TD className="text-center font-medium text-emerald-600">
+                        <TD className="text-center font-medium text-emerald-600 dark:text-emerald-400">
                           {c.messages_sent}
                         </TD>
-                        <TD className="text-center font-medium text-red-600">
+                        <TD className="text-center font-medium text-red-600 dark:text-red-400">
                           {c.messages_failed}
                         </TD>
                         <TD>

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Send,
+  Image as ImageIcon,
   AlertTriangle,
   CheckCircle2,
   Users,
@@ -15,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { formatPhoneDisplay } from "@/lib/phone";
+import { publicConfig } from "@/lib/config";
 import type { Contact } from "@/lib/types";
 
 interface SendResult {
@@ -35,6 +37,7 @@ export function SendCampaignForm({
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [imageUrl, setImageUrl] = useState(publicConfig.whatsappImageUrl);
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<SendResult | null>(null);
@@ -93,6 +96,7 @@ export function SendCampaignForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim() || `Campaign ${new Date().toLocaleDateString()}`,
+          imageUrl: imageUrl.trim(),
           contactIds: Array.from(selectedIds),
         }),
       });
@@ -116,18 +120,18 @@ export function SendCampaignForm({
     <Card>
       <CardHeader>
         <CardTitle>New campaign</CardTitle>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
           Sends the WhatsApp template to the selected contacts, personalized
           with each customer&apos;s name and form link.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
         {!configured && (
-          <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+          <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
               WhatsApp API is not configured yet. Add your credentials to
-              <code className="mx-1 rounded bg-amber-100 px-1">.env.local</code>
+              <code className="mx-1 rounded bg-amber-100 px-1 dark:bg-amber-500/20">.env.local</code>
               to enable sending.
             </span>
           </div>
@@ -142,6 +146,25 @@ export function SendCampaignForm({
             onChange={(e) => setName(e.target.value)}
             disabled={sending}
           />
+        </div>
+
+        <div>
+          <Label htmlFor="image-url">
+            <span className="inline-flex items-center gap-1">
+              <ImageIcon className="h-3.5 w-3.5" /> Header image URL
+            </span>
+          </Label>
+          <Input
+            id="image-url"
+            placeholder="https://…/banner.jpg"
+            value={imageUrl}
+            onChange={(e) => setImageUrl(e.target.value)}
+            disabled={sending}
+          />
+          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+            Sent to every customer. Defaults to
+            <code className="mx-1">NEXT_PUBLIC_WHATSAPP_IMAGE_URL</code>.
+          </p>
         </div>
 
         <div>
@@ -167,7 +190,7 @@ export function SendCampaignForm({
           </div>
 
           <div className="relative mb-2">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <Input
               placeholder="Search contacts…"
               value={search}
@@ -177,28 +200,28 @@ export function SendCampaignForm({
             />
           </div>
 
-          <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-200">
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700">
             {filteredContacts.length === 0 ? (
-              <p className="p-4 text-center text-sm text-slate-400">
+              <p className="p-4 text-center text-sm text-slate-400 dark:text-slate-500">
                 No contacts match your search.
               </p>
             ) : (
-              <ul className="divide-y divide-slate-100">
+              <ul className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredContacts.map((c) => (
                   <li key={c.id}>
-                    <label className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-50">
+                    <label className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/60">
                       <input
                         type="checkbox"
                         checked={selectedIds.has(c.id)}
                         onChange={() => toggle(c.id)}
                         disabled={sending}
-                        className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500/30"
+                        className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500/30 dark:border-slate-600 dark:bg-slate-800"
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-slate-800">
+                        <span className="block truncate text-sm font-medium text-slate-800 dark:text-slate-200">
                           {c.name}
                         </span>
-                        <span className="block text-xs text-slate-400">
+                        <span className="block text-xs text-slate-400 dark:text-slate-500">
                           {formatPhoneDisplay(c.phone)}
                         </span>
                       </span>
@@ -213,10 +236,10 @@ export function SendCampaignForm({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          <Users className="h-4 w-4 text-slate-400" />
+        <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+          <Users className="h-4 w-4 text-slate-400 dark:text-slate-500" />
           <span>
-            <span className="font-semibold text-slate-900">
+            <span className="font-semibold text-slate-900 dark:text-slate-100">
               {selectedIds.size.toLocaleString()}
             </span>{" "}
             of {contacts.length.toLocaleString()} contacts selected.
@@ -224,23 +247,23 @@ export function SendCampaignForm({
         </div>
 
         {error && (
-          <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+          <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {result && (
-          <div className="flex items-start gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
+          <div className="flex items-start gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               <p className="font-medium">Campaign sent.</p>
-              <p className="text-emerald-700">
+              <p className="text-emerald-700 dark:text-emerald-300/80">
                 {result.sent} delivered · {result.failed} failed of{" "}
                 {result.total}.
               </p>
               {result.failed > 0 && result.sampleError && (
-                <p className="mt-1 text-xs text-emerald-700/80">
+                <p className="mt-1 text-xs text-emerald-700/80 dark:text-emerald-300/60">
                   Example error: {result.sampleError}
                 </p>
               )}
@@ -262,8 +285,8 @@ export function SendCampaignForm({
             Send campaign
           </Button>
         ) : (
-          <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-amber-800">
+          <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/20 dark:bg-amber-500/10 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-amber-800 dark:text-amber-300">
               Send WhatsApp messages to {selectedIds.size.toLocaleString()}{" "}
               contact{selectedIds.size === 1 ? "" : "s"} now?
             </p>

@@ -44,7 +44,7 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
           </div>
 
           {state?.error && (
-            <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+            <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{state.error}</span>
             </div>

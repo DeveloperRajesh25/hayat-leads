@@ -102,3 +102,21 @@ export function parseContactsCsv(
     invalidCount: rows.length - validCount,
   };
 }
+
+/** Escape a single CSV field per RFC 4180 (quote when needed). */
+function escapeCsvField(value: unknown): string {
+  const s = value === null || value === undefined ? "" : String(value);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * Build CSV text from a header row + data rows. Used by the dashboard's
+ * per-stat "download" export route.
+ */
+export function toCsv(headers: string[], rows: unknown[][]): string {
+  const lines = [headers, ...rows].map((row) =>
+    row.map(escapeCsvField).join(","),
+  );
+  // Leading BOM so Excel opens UTF-8 CSVs (e.g. names with accents) correctly.
+  return String.fromCharCode(0xfeff) + lines.join("\r\n") + "\r\n";
+}

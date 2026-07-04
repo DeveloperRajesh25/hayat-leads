@@ -56,7 +56,27 @@ export const sendCampaignSchema = z.object({
     .min(1, "Campaign name is required")
     .max(120, "Campaign name is too long"),
   templateName: z.string().trim().max(120).optional(),
+  imageUrl: z
+    .string()
+    .trim()
+    .url("Image URL must be a valid https URL")
+    .optional()
+    .or(z.literal("")),
   contactIds: z.array(z.string().uuid()).min(1, "Select at least one contact"),
 });
 
 export type SendCampaignInput = z.infer<typeof sendCampaignSchema>;
+
+/** Toggle a lead's converted status from the leads dashboard. */
+export const updateLeadSchema = z.object({
+  converted: z.boolean(),
+});
+
+export type UpdateLeadInput = z.infer<typeof updateLeadSchema>;
+
+/** Bulk-delete contacts selected from the contacts table. */
+export const bulkDeleteContactsSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1, "Select at least one contact").max(500),
+});
+
+export type BulkDeleteContactsInput = z.infer<typeof bulkDeleteContactsSchema>;

@@ -10,16 +10,19 @@ import { Badge } from "@/components/ui/badge";
 import { LeadsFilter } from "@/components/leads/leads-filter";
 import { InterestBadge } from "@/components/leads/interest-badge";
 import { WhatsAppButton } from "@/components/leads/whatsapp-button";
+import { ConvertButton } from "@/components/leads/convert-button";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { formatDateTime } from "@/lib/utils";
 import { buttonClasses } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { InterestStatus, LeadResponse } from "@/lib/types";
+import type { LeadResponse } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Leads" };
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 50;
+
+type StatusFilter = "interested" | "not_interested" | "converted";
 
 export default async function LeadsPage({
   searchParams,
@@ -29,9 +32,11 @@ export default async function LeadsPage({
   const sp = await searchParams;
   const { supabase } = await getSessionUser();
 
-  const status =
-    sp.status === "interested" || sp.status === "not_interested"
-      ? (sp.status as InterestStatus)
+  const status: StatusFilter | null =
+    sp.status === "interested" ||
+    sp.status === "not_interested" ||
+    sp.status === "converted"
+      ? (sp.status as StatusFilter)
       : null;
   const q = (sp.q ?? "").trim();
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
@@ -44,7 +49,8 @@ export default async function LeadsPage({
     .order("created_at", { ascending: false })
     .range(from, to);
 
-  if (status) query = query.eq("interest_status", status);
+  if (status === "converted") query = query.eq("converted", true);
+  else if (status) query = query.eq("interest_status", status);
   if (q) {
     // Strip characters that would break the PostgREST `or` filter syntax.
     const safe = q.replace(/[%,()]/g, " ").trim();
@@ -75,7 +81,7 @@ export default async function LeadsPage({
       </PageHeader>
 
       <Card>
-        <div className="border-b border-slate-100 p-4">
+        <div className="border-b border-slate-100 p-4 dark:border-slate-800">
           <LeadsFilter />
         </div>
         <CardContent className="p-0">
@@ -100,6 +106,7 @@ export default async function LeadsPage({
                     <TH>Interest</TH>
                     <TH>Requirement</TH>
                     <TH>Submitted</TH>
+                    <TH>Converted</TH>
                     <TH className="text-right">Action</TH>
                   </TR>
                 </THead>
@@ -107,10 +114,10 @@ export default async function LeadsPage({
                   {leads.map((lead) => (
                     <TR key={lead.id} className="align-top">
                       <TD>
-                        <div className="font-medium text-slate-900">
+                        <div className="font-medium text-slate-900 dark:text-slate-100">
                           {lead.name}
                         </div>
-                        <div className="text-xs text-slate-500">
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
                           {formatPhoneDisplay(lead.phone)}
                         </div>
                       </TD>
@@ -120,25 +127,28 @@ export default async function LeadsPage({
                       <TD className="max-w-xs">
                         {lead.requirement_details ? (
                           <p
-                            className="line-clamp-2 text-slate-700"
+                            className="line-clamp-2 text-slate-700 dark:text-slate-300"
                             title={lead.requirement_details}
                           >
                             {lead.requirement_details}
                           </p>
                         ) : (
-                          <span className="text-slate-400">—</span>
+                          <span className="text-slate-400 dark:text-slate-500">—</span>
                         )}
                         {lead.notes && (
                           <p
-                            className="mt-1 line-clamp-1 text-xs text-slate-400"
+                            className="mt-1 line-clamp-1 text-xs text-slate-400 dark:text-slate-500"
                             title={lead.notes}
                           >
                             Note: {lead.notes}
                           </p>
                         )}
                       </TD>
-                      <TD className="whitespace-nowrap text-slate-500">
+                      <TD className="whitespace-nowrap text-slate-500 dark:text-slate-400">
                         {formatDateTime(lead.created_at)}
+                      </TD>
+                      <TD>
+                        <ConvertButton id={lead.id} converted={lead.converted} />
                       </TD>
                       <TD>
                         <div className="flex justify-end">
@@ -151,8 +161,8 @@ export default async function LeadsPage({
               </Table>
 
               {totalPages > 1 && (
-                <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-sm">
-                  <span className="text-slate-500">
+                <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-sm dark:border-slate-800">
+                  <span className="text-slate-500 dark:text-slate-400">
                     Page {page} of {totalPages}
                   </span>
                   <div className="flex items-center gap-2">

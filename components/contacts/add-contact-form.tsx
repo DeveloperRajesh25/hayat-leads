@@ -44,7 +44,7 @@ export function AddContactForm() {
     <Card>
       <CardHeader>
         <CardTitle>Add a contact</CardTitle>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
           Add a single lead manually instead of uploading a CSV.
         </p>
       </CardHeader>
@@ -79,7 +79,7 @@ export function AddContactForm() {
         </form>
 
         {error && (
-          <div className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+          <div className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>

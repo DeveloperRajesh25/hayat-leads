@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/admin/sidebar";
+import { LogoWatermark } from "@/components/brand/logo-watermark";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,8 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 lg:flex">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 lg:flex">
+      <LogoWatermark />
       <Sidebar email={user.email ?? "admin"} />
       <div className="flex-1 lg:pl-64">
         <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">

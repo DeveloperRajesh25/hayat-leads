@@ -17,6 +17,8 @@ const PROTECTED_API_PREFIXES = [
   "/api/contacts",
   "/api/campaigns",
   "/api/stats",
+  "/api/leads",
+  "/api/export",
 ];
 
 function isProtectedPage(pathname: string): boolean {

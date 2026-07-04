@@ -132,12 +132,21 @@ create table if not exists public.responses (
                         check (interest_status in ('interested','not_interested')),
   requirement_details text,
   notes               text,
+  converted           boolean not null default false,
+  converted_at        timestamptz,
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now()
 );
 
+-- Migrating an existing database created before the "converted" tracking
+-- feature? These two lines add the columns without touching the rest of the
+-- table (safe to run — no-ops when the columns already exist).
+alter table public.responses add column if not exists converted boolean not null default false;
+alter table public.responses add column if not exists converted_at timestamptz;
+
 create index if not exists responses_created_at_idx on public.responses (created_at desc);
 create index if not exists responses_interest_idx   on public.responses (interest_status);
+create index if not exists responses_converted_idx  on public.responses (converted);
 
 drop trigger if exists responses_set_updated_at on public.responses;
 create trigger responses_set_updated_at

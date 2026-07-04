@@ -9,6 +9,7 @@ import {
   MessageSquareText,
   Upload,
   ArrowRight,
+  Trophy,
 } from "lucide-react";
 import { getSessionUser } from "@/lib/auth";
 import { getDashboardStats } from "@/lib/stats";
@@ -19,6 +20,7 @@ import { buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { InterestBadge } from "@/components/leads/interest-badge";
 import { WhatsAppButton } from "@/components/leads/whatsapp-button";
+import { ConvertButton } from "@/components/leads/convert-button";
 import { formatDateTime } from "@/lib/utils";
 import { formatPhoneDisplay } from "@/lib/phone";
 import type { LeadResponse } from "@/lib/types";
@@ -53,7 +55,8 @@ export default async function DashboardPage() {
         </Link>
       </PageHeader>
 
-      {/* Stat grid */}
+      {/* Stat grid — every card links through to the underlying data and can
+          be downloaded as CSV individually via the small download icon. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard
           label="Total contacts"
@@ -61,6 +64,8 @@ export default async function DashboardPage() {
           icon={<Users className="h-5 w-5" />}
           tone="brand"
           hint="Uploaded from CSV"
+          href="/contacts"
+          downloadHref="/api/export?type=contacts"
         />
         <StatCard
           label="Messages sent"
@@ -68,6 +73,8 @@ export default async function DashboardPage() {
           icon={<Send className="h-5 w-5" />}
           tone="sky"
           hint="Delivered via WhatsApp"
+          href="/campaigns"
+          downloadHref="/api/export?type=messages"
         />
         <StatCard
           label="Pending responses"
@@ -75,6 +82,8 @@ export default async function DashboardPage() {
           icon={<Clock className="h-5 w-5" />}
           tone="amber"
           hint="Awaiting customer reply"
+          href="/contacts"
+          downloadHref="/api/export?type=pending"
         />
         <StatCard
           label="Interested"
@@ -82,12 +91,29 @@ export default async function DashboardPage() {
           icon={<ThumbsUp className="h-5 w-5" />}
           tone="emerald"
           hint="Ready to follow up"
+          href="/leads?status=interested"
+          downloadHref="/api/export?type=interested"
+        />
+        <StatCard
+          label="Converted"
+          value={stats.converted.toLocaleString()}
+          icon={<Trophy className="h-5 w-5" />}
+          tone="violet"
+          hint={
+            stats.interested > 0
+              ? `${Math.round((stats.converted / stats.interested) * 100)}% of interested`
+              : "No interested leads yet"
+          }
+          href="/leads?status=converted"
+          downloadHref="/api/export?type=converted"
         />
         <StatCard
           label="Not interested"
           value={stats.notInterested.toLocaleString()}
           icon={<ThumbsDown className="h-5 w-5" />}
           tone="red"
+          href="/leads?status=not_interested"
+          downloadHref="/api/export?type=not_interested"
         />
         <StatCard
           label="Total responses"
@@ -95,6 +121,8 @@ export default async function DashboardPage() {
           icon={<MessageSquareText className="h-5 w-5" />}
           tone="slate"
           hint={`${stats.totalCampaigns} campaign(s) run`}
+          href="/leads"
+          downloadHref="/api/export?type=responses"
         />
       </div>
 
@@ -104,7 +132,7 @@ export default async function DashboardPage() {
           <CardTitle>Recent responses</CardTitle>
           <Link
             href="/leads"
-            className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"
+            className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
           >
             View all leads <ArrowRight className="h-4 w-4" />
           </Link>
@@ -119,24 +147,25 @@ export default async function DashboardPage() {
               />
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {recent.map((r) => (
                 <div
                   key={r.id}
                   className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate font-medium text-slate-900">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate font-medium text-slate-900 dark:text-slate-100">
                         {r.name}
                       </p>
                       <InterestBadge status={r.interest_status} />
+                      <ConvertButton id={r.id} converted={r.converted} />
                     </div>
-                    <p className="mt-0.5 text-sm text-slate-500">
+                    <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
                       {formatPhoneDisplay(r.phone)} · {formatDateTime(r.created_at)}
                     </p>
                     {r.requirement_details && (
-                      <p className="mt-1 line-clamp-1 text-sm text-slate-600">
+                      <p className="mt-1 line-clamp-1 text-sm text-slate-600 dark:text-slate-400">
                         {r.requirement_details}
                       </p>
                     )}

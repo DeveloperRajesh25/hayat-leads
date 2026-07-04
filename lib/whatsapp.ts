@@ -9,6 +9,7 @@ export interface SendTemplateArgs {
   token: string;
   templateName?: string;
   templateLang?: string;
+  imageUrl?: string;
 }
 
 export interface WhatsappSendResult {
@@ -23,10 +24,10 @@ export interface WhatsappSendResult {
  * Send a personalized WhatsApp template message via the Meta Cloud API.
  *
  * Expected template structure (created in WhatsApp Manager — see README):
- *   - Header:  static TEXT "HAYAT INTERIORS" (no variables — do not send a
- *              header component, or Meta rejects the call with
- *              "(#132012) Parameter format does not match format in the
- *              created template")
+ *   - Header:  IMAGE (required — this template's header format is IMAGE, so
+ *              every send must include a header component with an image
+ *              link, or Meta rejects the call with "(#132012) Parameter
+ *              format does not match format in the created template")
  *   - Body:    "Hi {{1}}, Thank you for your interest in Hayat Interiors..."
  *   - Button:  URL (dynamic) with base ".../form/" and {{1}} = token
  */
@@ -39,8 +40,17 @@ export async function sendTemplateMessage(
 
   const templateName = args.templateName || publicConfig.whatsappTemplateName;
   const lang = args.templateLang || publicConfig.whatsappTemplateLang;
+  const imageUrl =
+    args.imageUrl !== undefined ? args.imageUrl : publicConfig.whatsappImageUrl;
 
   const components: Record<string, unknown>[] = [];
+
+  if (imageUrl) {
+    components.push({
+      type: "header",
+      parameters: [{ type: "image", image: { link: imageUrl } }],
+    });
+  }
 
   components.push({
     type: "body",

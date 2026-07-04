@@ -46,8 +46,8 @@ export function ContactActions({
   if (confirming) {
     return (
       <div className="flex items-center justify-end gap-2">
-        {error && <span className="text-xs text-red-600">{error}</span>}
-        <span className="text-xs text-slate-500">Delete {name}?</span>
+        {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
+        <span className="text-xs text-slate-500 dark:text-slate-400">Delete {name}?</span>
         <Button
           variant="ghost"
           size="sm"
@@ -73,7 +73,7 @@ export function ContactActions({
       <Link
         href={buildFormUrl(token)}
         target="_blank"
-        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
       >
         <ExternalLink className="h-3.5 w-3.5" />
         Form

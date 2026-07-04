@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { createContactSchema } from "@/lib/validation";
+import { createContactSchema, bulkDeleteContactsSchema } from "@/lib/validation";
 import { normalizePhone } from "@/lib/phone";
 import { generateToken } from "@/lib/utils";
 import { publicConfig } from "@/lib/config";
@@ -60,4 +60,38 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ contact: data });
+}
+
+/** Bulk delete — used by the "select multiple" contacts table. */
+export async function DELETE(req: Request) {
+  const { supabase, user } = await getSessionUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const parsed = bulkDeleteContactsSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Invalid input." },
+      { status: 400 },
+    );
+  }
+
+  const { error } = await supabase
+    .from("contacts")
+    .delete()
+    .in("id", parsed.data.ids);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, deleted: parsed.data.ids.length });
 }

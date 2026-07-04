@@ -103,16 +103,16 @@ export function CsvUploader() {
         {/* Dropzone / picker */}
         <label
           htmlFor="csv-input"
-          className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center transition-colors hover:border-brand-400 hover:bg-brand-50/40"
+          className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center transition-colors hover:border-brand-400 hover:bg-brand-50/40 dark:border-slate-700 dark:bg-slate-800/40 dark:hover:border-brand-600 dark:hover:bg-brand-500/10"
         >
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-100 text-brand-600">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-100 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400">
             <UploadCloud className="h-6 w-6" />
           </div>
           <div>
-            <p className="text-sm font-medium text-slate-700">
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
               {fileName ?? "Click to select a CSV file"}
             </p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-400 dark:text-slate-500">
               Columns: customer name &amp; phone number · Max 5 MB
             </p>
           </div>
@@ -127,21 +127,21 @@ export function CsvUploader() {
         </label>
 
         {error && (
-          <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+          <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {result && (
-          <div className="flex items-start gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
+          <div className="flex items-start gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               <p className="font-medium">
                 Imported {result.inserted} new contact
                 {result.inserted === 1 ? "" : "s"}.
               </p>
-              <p className="text-emerald-700">
+              <p className="text-emerald-700 dark:text-emerald-300/80">
                 {result.skippedExisting} already existed ·{" "}
                 {result.duplicatesInFile} duplicate(s) in file ·{" "}
                 {result.invalid} invalid row(s).
@@ -158,14 +158,14 @@ export function CsvUploader() {
               {parsed.invalidCount > 0 && (
                 <Badge tone="danger">{parsed.invalidCount} invalid</Badge>
               )}
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-400 dark:text-slate-500">
                 Showing first {previewRows.length} of {parsed.total} rows
               </span>
             </div>
 
-            <div className="max-h-72 overflow-auto rounded-lg border border-slate-200">
+            <div className="max-h-72 overflow-auto rounded-lg border border-slate-200 dark:border-slate-700">
               <table className="w-full text-left text-sm">
-                <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500">
+                <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
                   <tr>
                     <th className="px-3 py-2 font-medium">Name</th>
                     <th className="px-3 py-2 font-medium">Phone</th>
@@ -176,17 +176,17 @@ export function CsvUploader() {
                   {previewRows.map((r, i) => (
                     <tr
                       key={i}
-                      className="border-t border-slate-100 last:border-0"
+                      className="border-t border-slate-100 last:border-0 dark:border-slate-800"
                     >
-                      <td className="px-3 py-2 text-slate-700">{r.name}</td>
-                      <td className="px-3 py-2 text-slate-700">
+                      <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{r.name}</td>
+                      <td className="px-3 py-2 text-slate-700 dark:text-slate-300">
                         {r.valid ? formatPhoneDisplay(r.phone) : r.rawPhone || "—"}
                       </td>
                       <td className="px-3 py-2">
                         {r.valid ? (
-                          <span className="text-emerald-600">Valid</span>
+                          <span className="text-emerald-600 dark:text-emerald-400">Valid</span>
                         ) : (
-                          <span className="text-red-600">{r.error}</span>
+                          <span className="text-red-600 dark:text-red-400">{r.error}</span>
                         )}
                       </td>
                     </tr>

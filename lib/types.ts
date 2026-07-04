@@ -74,6 +74,8 @@ export interface LeadResponse {
   interest_status: InterestStatus;
   requirement_details: string | null;
   notes: string | null;
+  converted: boolean;
+  converted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -91,4 +93,5 @@ export interface DashboardStats {
   pending: number;
   totalResponses: number;
   totalCampaigns: number;
+  converted: number;
 }

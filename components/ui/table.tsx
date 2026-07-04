@@ -23,6 +23,7 @@ export function THead({
     <thead
       className={cn(
         "border-b border-slate-200 bg-slate-50 text-xs font-medium uppercase tracking-wide text-slate-500",
+        "dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400",
         className,
       )}
       {...props}
@@ -42,6 +43,7 @@ export function TR({
     <tr
       className={cn(
         "border-b border-slate-100 last:border-0 hover:bg-slate-50/60",
+        "dark:border-slate-800 dark:hover:bg-slate-800/40",
         className,
       )}
       {...props}
@@ -64,7 +66,10 @@ export function TD({
 }: React.TdHTMLAttributes<HTMLTableCellElement>) {
   return (
     <td
-      className={cn("px-4 py-3 align-middle text-slate-700", className)}
+      className={cn(
+        "px-4 py-3 align-middle text-slate-700 dark:text-slate-300",
+        className,
+      )}
       {...props}
     />
   );
