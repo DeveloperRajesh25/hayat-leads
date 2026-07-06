@@ -162,7 +162,9 @@ export function SendCampaignForm({
             disabled={sending}
           />
           <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-            Sent to every customer. Defaults to
+            Sent to every customer. Must be a public, direct image link
+            (JPG/PNG). Google Drive share links are auto-converted — just make
+            sure the file is shared as “Anyone with the link”. Defaults to
             <code className="mx-1">NEXT_PUBLIC_WHATSAPP_IMAGE_URL</code>.
           </p>
         </div>

@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Building2,
   LayoutDashboard,
   Users,
   Send,
@@ -56,8 +56,15 @@ export function Sidebar({ email }: { email: string }) {
 
   const Brand = () => (
     <Link href="/dashboard" className="flex items-center gap-2.5">
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-white">
-        <Building2 className="h-5 w-5" />
+      <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-white ring-1 ring-slate-200 dark:ring-slate-700">
+        <Image
+          src="/short-logo.png"
+          alt="Hayat Interiors"
+          width={36}
+          height={36}
+          className="h-full w-full object-contain"
+          priority
+        />
       </div>
       <div className="leading-tight">
         <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
@@ -74,7 +81,7 @@ export function Sidebar({ email }: { email: string }) {
         <p className="truncate text-xs font-medium text-slate-500 dark:text-slate-400">
           Signed in as
         </p>
-        <p className="truncate text-sm text-slate-800 dark:text-slate-200">{email}</p>
+        <p className="truncate text-sm text-slate-800 dark:text-slate-200">Mohammed Siddique</p>
       </div>
       <ThemeToggle />
       <form action={logout}>

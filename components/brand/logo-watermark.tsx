@@ -17,7 +17,7 @@ export function LogoWatermark({ className }: { className?: string }) {
     >
       <div className="relative h-40 w-[min(70vw,42rem)]">
         <Image
-          src="/white-logo.png"
+          src="/hayat-logo.png"
           alt=""
           fill
           sizes="42rem"

@@ -10,6 +10,8 @@ import {
   Upload,
   ArrowRight,
   Trophy,
+  CheckCheck,
+  XCircle,
 } from "lucide-react";
 import { getSessionUser } from "@/lib/auth";
 import { getDashboardStats } from "@/lib/stats";
@@ -55,8 +57,10 @@ export default async function DashboardPage() {
         </Link>
       </PageHeader>
 
-      {/* Stat grid — every card links through to the underlying data and can
-          be downloaded as CSV individually via the small download icon. */}
+      {/* Stat grid — every card links through to the underlying data, can be
+          downloaded as CSV via the download icon, and can be individually
+          reset to zero via the reset icon (older records stay in the database
+          but are no longer counted on that card). */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard
           label="Total contacts"
@@ -66,15 +70,41 @@ export default async function DashboardPage() {
           hint="Uploaded from CSV"
           href="/contacts"
           downloadHref="/api/export?type=contacts"
+          resetKey="totalContacts"
         />
         <StatCard
           label="Messages sent"
           value={stats.messagesSent.toLocaleString()}
           icon={<Send className="h-5 w-5" />}
           tone="sky"
-          hint="Delivered via WhatsApp"
+          hint="Accepted by WhatsApp"
           href="/campaigns"
           downloadHref="/api/export?type=messages"
+          resetKey="messagesSent"
+        />
+        <StatCard
+          label="Delivered"
+          value={stats.delivered.toLocaleString()}
+          icon={<CheckCheck className="h-5 w-5" />}
+          tone="emerald"
+          hint={
+            stats.messagesSent > 0
+              ? `${Math.round((stats.delivered / stats.messagesSent) * 100)}% of sent`
+              : "Confirmed delivered / read"
+          }
+          href="/campaigns"
+          downloadHref="/api/export?type=messages"
+          resetKey="delivered"
+        />
+        <StatCard
+          label="Failed"
+          value={stats.failed.toLocaleString()}
+          icon={<XCircle className="h-5 w-5" />}
+          tone="red"
+          hint="Not delivered — check header image / number"
+          href="/campaigns"
+          downloadHref="/api/export?type=messages"
+          resetKey="failed"
         />
         <StatCard
           label="Pending responses"
@@ -84,6 +114,7 @@ export default async function DashboardPage() {
           hint="Awaiting customer reply"
           href="/contacts"
           downloadHref="/api/export?type=pending"
+          resetKey="pending"
         />
         <StatCard
           label="Interested"
@@ -93,6 +124,7 @@ export default async function DashboardPage() {
           hint="Ready to follow up"
           href="/leads?status=interested"
           downloadHref="/api/export?type=interested"
+          resetKey="interested"
         />
         <StatCard
           label="Converted"
@@ -106,6 +138,7 @@ export default async function DashboardPage() {
           }
           href="/leads?status=converted"
           downloadHref="/api/export?type=converted"
+          resetKey="converted"
         />
         <StatCard
           label="Not interested"
@@ -114,6 +147,7 @@ export default async function DashboardPage() {
           tone="red"
           href="/leads?status=not_interested"
           downloadHref="/api/export?type=not_interested"
+          resetKey="notInterested"
         />
         <StatCard
           label="Total responses"
@@ -123,6 +157,7 @@ export default async function DashboardPage() {
           hint={`${stats.totalCampaigns} campaign(s) run`}
           href="/leads"
           downloadHref="/api/export?type=responses"
+          resetKey="totalResponses"
         />
       </div>
 

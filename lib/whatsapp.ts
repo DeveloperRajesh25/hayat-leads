@@ -1,5 +1,31 @@
 import { publicConfig, serverConfig } from "./config";
 
+/**
+ * WhatsApp requires the header image URL to point directly at the raw image
+ * bytes (with an image/* content-type). A Google Drive "share" or "view" link
+ * such as `https://drive.google.com/file/d/<ID>/view` is an HTML page, not an
+ * image — Meta accepts the send call (so we mark it "sent") but silently fails
+ * to fetch the media, and the customer never receives the message.
+ *
+ * This rewrites common Google Drive link shapes to a direct, image-serving
+ * URL (`https://drive.google.com/uc?export=download&id=<ID>`) so those images
+ * actually deliver. Non-Drive URLs are returned unchanged.
+ */
+export function normalizeImageUrl(url: string | undefined): string | undefined {
+  if (!url) return url;
+  const trimmed = url.trim();
+  if (!/drive\.google\.com|docs\.google\.com/i.test(trimmed)) return trimmed;
+
+  // Extract the Drive file id from the common URL shapes:
+  //   /file/d/<ID>/view       •  ?id=<ID>       •  /d/<ID>
+  const id =
+    trimmed.match(/\/(?:file\/)?d\/([a-zA-Z0-9_-]+)/)?.[1] ??
+    trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/)?.[1];
+
+  if (!id) return trimmed;
+  return `https://drive.google.com/uc?export=download&id=${id}`;
+}
+
 export interface SendTemplateArgs {
   /** Recipient in E.164 digits, no leading "+". */
   to: string;
@@ -40,8 +66,9 @@ export async function sendTemplateMessage(
 
   const templateName = args.templateName || publicConfig.whatsappTemplateName;
   const lang = args.templateLang || publicConfig.whatsappTemplateLang;
-  const imageUrl =
-    args.imageUrl !== undefined ? args.imageUrl : publicConfig.whatsappImageUrl;
+  const imageUrl = normalizeImageUrl(
+    args.imageUrl !== undefined ? args.imageUrl : publicConfig.whatsappImageUrl,
+  );
 
   const components: Record<string, unknown>[] = [];
 

@@ -80,3 +80,10 @@ export const bulkDeleteContactsSchema = z.object({
 });
 
 export type BulkDeleteContactsInput = z.infer<typeof bulkDeleteContactsSchema>;
+
+/** Bulk-delete leads (responses) selected from the leads table. */
+export const bulkDeleteLeadsSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1, "Select at least one lead").max(500),
+});
+
+export type BulkDeleteLeadsInput = z.infer<typeof bulkDeleteLeadsSchema>;

@@ -88,6 +88,10 @@ export interface LeadResponseWithContact extends LeadResponse {
 export interface DashboardStats {
   totalContacts: number;
   messagesSent: number;
+  /** Messages confirmed delivered or read by the WhatsApp webhook. */
+  delivered: number;
+  /** Messages that failed to send or deliver. */
+  failed: number;
   interested: number;
   notInterested: number;
   pending: number;

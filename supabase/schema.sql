@@ -154,6 +154,24 @@ create trigger responses_set_updated_at
   for each row execute function public.set_updated_at();
 
 -- ===========================================================================
+-- 6. stat_resets  (per-card dashboard "reset to zero" baselines)
+-- ---------------------------------------------------------------------------
+-- Each row records the moment an admin reset a dashboard stat card. From then
+-- on the card only counts rows created AFTER `reset_at`, so old numbers are
+-- hidden and the count effectively starts again from zero.
+-- ===========================================================================
+create table if not exists public.stat_resets (
+  stat_key   text primary key,
+  reset_at   timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists stat_resets_set_updated_at on public.stat_resets;
+create trigger stat_resets_set_updated_at
+  before update on public.stat_resets
+  for each row execute function public.set_updated_at();
+
+-- ===========================================================================
 -- Row Level Security
 -- ---------------------------------------------------------------------------
 -- Strategy: lock every table down. Authenticated admins (logged into the
@@ -166,12 +184,13 @@ alter table public.contacts  enable row level security;
 alter table public.campaigns enable row level security;
 alter table public.messages  enable row level security;
 alter table public.responses enable row level security;
+alter table public.stat_resets enable row level security;
 
 -- Make sure the authenticated role has table privileges (RLS still applies).
 grant usage on schema public to authenticated;
 grant select, insert, update, delete
   on public.profiles, public.contacts, public.campaigns,
-     public.messages, public.responses
+     public.messages, public.responses, public.stat_resets
   to authenticated;
 
 -- profiles: each admin sees only their own profile row.
@@ -200,6 +219,10 @@ create policy messages_admin_all on public.messages
 
 drop policy if exists responses_admin_all on public.responses;
 create policy responses_admin_all on public.responses
+  for all to authenticated using (true) with check (true);
+
+drop policy if exists stat_resets_admin_all on public.stat_resets;
+create policy stat_resets_admin_all on public.stat_resets
   for all to authenticated using (true) with check (true);
 
 -- ===========================================================================

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "./card";
+import { StatResetButton } from "./stat-reset-button";
 
 export type StatTone =
   | "brand"
@@ -53,6 +54,7 @@ export function StatCard({
   className,
   href,
   downloadHref,
+  resetKey,
 }: {
   label: string;
   value: React.ReactNode;
@@ -64,6 +66,8 @@ export function StatCard({
   href?: string;
   /** Adds a small per-card download button that exports this stat as CSV. */
   downloadHref?: string;
+  /** Adds a small per-card "reset to zero" button for this stat key. */
+  resetKey?: string;
 }) {
   const styles = toneStyles[tone];
   return (
@@ -96,6 +100,7 @@ export function StatCard({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {resetKey && <StatResetButton statKey={resetKey} label={label} />}
           {downloadHref && (
             <a
               href={downloadHref}

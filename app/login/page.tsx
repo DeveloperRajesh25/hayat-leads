@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Building2 } from "lucide-react";
+import Image from "next/image";
 import { LoginForm } from "./login-form";
 import { LogoWatermark } from "@/components/brand/logo-watermark";
 
@@ -21,8 +21,15 @@ export default async function LoginPage({
       <LogoWatermark />
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-lg shadow-brand-600/30">
-            <Building2 className="h-7 w-7" />
+          <div className="mb-4 flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-brand-600/20 ring-1 ring-slate-200 dark:ring-slate-700">
+            <Image
+              src="/hayat-logo.png"
+              alt="Hayat Interiors"
+              width={64}
+              height={64}
+              className="h-full w-full object-contain p-1.5"
+              priority
+            />
           </div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">
             Hayat Interiors

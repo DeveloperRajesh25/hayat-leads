@@ -1,18 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { MessageSquareText, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { getSessionUser } from "@/lib/auth";
 import { PageHeader } from "@/components/admin/page-header";
 import { Card, CardContent } from "@/components/ui/card";
-import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { LeadsFilter } from "@/components/leads/leads-filter";
-import { InterestBadge } from "@/components/leads/interest-badge";
-import { WhatsAppButton } from "@/components/leads/whatsapp-button";
-import { ConvertButton } from "@/components/leads/convert-button";
-import { formatPhoneDisplay } from "@/lib/phone";
-import { formatDateTime } from "@/lib/utils";
+import { LeadsTable } from "@/components/leads/leads-table";
 import { buttonClasses } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { LeadResponse } from "@/lib/types";
@@ -85,81 +79,18 @@ export default async function LeadsPage({
           <LeadsFilter />
         </div>
         <CardContent className="p-0">
-          {leads.length === 0 ? (
-            <div className="p-5">
-              <EmptyState
-                icon={<MessageSquareText className="h-6 w-6" />}
-                title={q || status ? "No matching leads" : "No leads yet"}
-                description={
-                  q || status
-                    ? "Try adjusting your filters."
-                    : "Responses appear here once customers submit the form."
-                }
-              />
-            </div>
-          ) : (
-            <>
-              <Table>
-                <THead>
-                  <TR className="hover:bg-transparent">
-                    <TH>Customer</TH>
-                    <TH>Interest</TH>
-                    <TH>Requirement</TH>
-                    <TH>Submitted</TH>
-                    <TH>Converted</TH>
-                    <TH className="text-right">Action</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  {leads.map((lead) => (
-                    <TR key={lead.id} className="align-top">
-                      <TD>
-                        <div className="font-medium text-slate-900 dark:text-slate-100">
-                          {lead.name}
-                        </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400">
-                          {formatPhoneDisplay(lead.phone)}
-                        </div>
-                      </TD>
-                      <TD>
-                        <InterestBadge status={lead.interest_status} />
-                      </TD>
-                      <TD className="max-w-xs">
-                        {lead.requirement_details ? (
-                          <p
-                            className="line-clamp-2 text-slate-700 dark:text-slate-300"
-                            title={lead.requirement_details}
-                          >
-                            {lead.requirement_details}
-                          </p>
-                        ) : (
-                          <span className="text-slate-400 dark:text-slate-500">—</span>
-                        )}
-                        {lead.notes && (
-                          <p
-                            className="mt-1 line-clamp-1 text-xs text-slate-400 dark:text-slate-500"
-                            title={lead.notes}
-                          >
-                            Note: {lead.notes}
-                          </p>
-                        )}
-                      </TD>
-                      <TD className="whitespace-nowrap text-slate-500 dark:text-slate-400">
-                        {formatDateTime(lead.created_at)}
-                      </TD>
-                      <TD>
-                        <ConvertButton id={lead.id} converted={lead.converted} />
-                      </TD>
-                      <TD>
-                        <div className="flex justify-end">
-                          <WhatsAppButton phone={lead.phone} name={lead.name} />
-                        </div>
-                      </TD>
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
+          <LeadsTable
+            leads={leads}
+            emptyTitle={q || status ? "No matching leads" : "No leads yet"}
+            emptyDescription={
+              q || status
+                ? "Try adjusting your filters."
+                : "Responses appear here once customers submit the form."
+            }
+          />
 
+          {leads.length > 0 && (
+            <>
               {totalPages > 1 && (
                 <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-sm dark:border-slate-800">
                   <span className="text-slate-500 dark:text-slate-400">
