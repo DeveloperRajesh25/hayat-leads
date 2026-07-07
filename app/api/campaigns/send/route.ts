@@ -11,7 +11,10 @@ export const runtime = "nodejs";
 // multiple campaigns or move sending to a background worker (see README).
 export const maxDuration = 60;
 
-const CONCURRENCY = 5;
+// Higher concurrency clears large batches within Vercel's 60s window. Meta's
+// per-number rate limit is high (80 msg/s default) so this stays well under it;
+// transient rate-limit errors are retried inside sendTemplateMessage.
+const CONCURRENCY = 10;
 
 export async function POST(req: Request) {
   const { supabase, user } = await getSessionUser();

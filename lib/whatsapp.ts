@@ -1,4 +1,20 @@
 import { publicConfig, serverConfig } from "./config";
+import { normalizePhone } from "./phone";
+
+/** Meta error codes that are transient and worth retrying (rate limits / temporary
+ *  server issues). Everything else is a permanent failure we should not retry. */
+const RETRYABLE_META_CODES = new Set([
+  131056, // (Business Account) pair rate limit hit
+  130429, // Cloud API rate limit hit
+  133016, // temporary account restriction / try again
+  131000, // generic "something went wrong", usually transient
+  368, //    temporarily blocked for policy violations (sometimes transient)
+]);
+
+/** Small sleep helper for backoff between retries. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * WhatsApp requires the header image URL to point directly at the raw image
@@ -70,6 +86,18 @@ export async function sendTemplateMessage(
     args.imageUrl !== undefined ? args.imageUrl : publicConfig.whatsappImageUrl,
   );
 
+  // Normalize the recipient to WhatsApp-ready E.164 digits (no "+", no spaces).
+  // A malformed number is accepted by Meta with a message id but never delivers,
+  // so we reject it up front and report a clear, per-contact failure instead.
+  const to = normalizePhone(args.to);
+  if (!to) {
+    return {
+      ok: false,
+      status: "failed",
+      error: `Invalid phone number "${args.to}" — could not be normalized to a valid international number.`,
+    };
+  }
+
   const components: Record<string, unknown>[] = [];
 
   if (imageUrl) {
@@ -96,7 +124,7 @@ export async function sendTemplateMessage(
   const payload = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
-    to: args.to,
+    to,
     type: "template",
     template: {
       name: templateName,
@@ -105,35 +133,64 @@ export async function sendTemplateMessage(
     },
   };
 
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-      // Each message is independent; don't let Next cache it.
-      cache: "no-store",
-    });
+  // Retry transient failures (rate limits / temporary Meta errors / network
+  // blips) with exponential backoff so a big batch doesn't lose recipients to a
+  // momentary rate-limit spike. Permanent errors return immediately.
+  const MAX_ATTEMPTS = 4;
+  let lastError = "Unknown error";
+  let lastRaw: unknown;
 
-    const data: unknown = await res.json().catch(() => ({}));
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        // Each message is independent; don't let Next cache it.
+        cache: "no-store",
+      });
 
-    if (!res.ok) {
-      const message =
-        (data as { error?: { message?: string } })?.error?.message ??
-        `WhatsApp API error (HTTP ${res.status})`;
-      return { ok: false, status: "failed", error: message, raw: data };
+      const data: unknown = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        const messageId = (data as { messages?: { id?: string }[] })
+          ?.messages?.[0]?.id;
+        return { ok: true, status: "sent", messageId, raw: data };
+      }
+
+      const err = (data as {
+        error?: { message?: string; code?: number; error_subcode?: number };
+      })?.error;
+      const code = err?.code;
+      // Include the Meta error code so undelivered reasons are diagnosable
+      // (e.g. 131049 = throttled to protect ecosystem engagement, 131026 =
+      // recipient not on WhatsApp / can't receive).
+      lastError = `${err?.message ?? `WhatsApp API error (HTTP ${res.status})`}${
+        code ? ` (code ${code}${err?.error_subcode ? `/${err.error_subcode}` : ""})` : ""
+      }`;
+      lastRaw = data;
+
+      const retryable =
+        res.status === 429 ||
+        res.status >= 500 ||
+        (code !== undefined && RETRYABLE_META_CODES.has(code));
+      if (!retryable || attempt === MAX_ATTEMPTS) {
+        return { ok: false, status: "failed", error: lastError, raw: lastRaw };
+      }
+    } catch (err) {
+      // Network error — always worth retrying.
+      lastError = err instanceof Error ? err.message : "Network error";
+      if (attempt === MAX_ATTEMPTS) {
+        return { ok: false, status: "failed", error: lastError };
+      }
     }
 
-    const messageId = (data as { messages?: { id?: string }[] })?.messages?.[0]
-      ?.id;
-    return { ok: true, status: "sent", messageId, raw: data };
-  } catch (err) {
-    return {
-      ok: false,
-      status: "failed",
-      error: err instanceof Error ? err.message : "Network error",
-    };
+    // Backoff: 0.5s, 1s, 2s (+ jitter) before the next attempt.
+    await sleep(500 * 2 ** (attempt - 1) + Math.floor(attempt * 137));
   }
+
+  return { ok: false, status: "failed", error: lastError, raw: lastRaw };
 }

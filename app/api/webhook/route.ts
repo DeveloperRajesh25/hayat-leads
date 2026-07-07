@@ -62,6 +62,8 @@ export async function POST(req: Request) {
 
     if (statuses.length > 0) {
       const admin = createAdminClient();
+      const affectedCampaigns = new Set<string>();
+
       for (const s of statuses) {
         if (!s?.id || !s?.status) continue;
         const update: Record<string, unknown> = {
@@ -74,7 +76,39 @@ export async function POST(req: Request) {
             s.errors?.[0]?.message ??
             "Delivery failed";
         }
-        await admin.from("messages").update(update).eq("wa_message_id", s.id);
+        // Update the message row and find out which campaign it belongs to so
+        // we can refresh that campaign's aggregate counters below.
+        const { data: updated } = await admin
+          .from("messages")
+          .update(update)
+          .eq("wa_message_id", s.id)
+          .select("campaign_id");
+        for (const row of updated ?? []) {
+          if (row?.campaign_id) affectedCampaigns.add(row.campaign_id);
+        }
+      }
+
+      // Recompute Sent/Failed for each touched campaign from the source of
+      // truth (the messages table) so the campaign history reflects REAL
+      // delivery — not just what Meta accepted at send time. A message counts
+      // as "failed" only when its final status is `failed`; anything that
+      // reached the customer (sent/delivered/read) counts as delivered.
+      for (const campaignId of affectedCampaigns) {
+        const { data: rows } = await admin
+          .from("messages")
+          .select("status")
+          .eq("campaign_id", campaignId);
+        if (!rows) continue;
+        const failed = rows.filter((r) => r.status === "failed").length;
+        const sent = rows.length - failed;
+        await admin
+          .from("campaigns")
+          .update({
+            messages_sent: sent,
+            messages_failed: failed,
+            status: sent > 0 ? "completed" : "failed",
+          })
+          .eq("id", campaignId);
       }
     }
   } catch (err) {

@@ -261,8 +261,14 @@ export function SendCampaignForm({
             <div>
               <p className="font-medium">Campaign sent.</p>
               <p className="text-emerald-700 dark:text-emerald-300/80">
-                {result.sent} delivered · {result.failed} failed of{" "}
+                {result.sent} accepted by WhatsApp · {result.failed} rejected of{" "}
                 {result.total}.
+              </p>
+              <p className="mt-1 text-xs text-emerald-700/80 dark:text-emerald-300/60">
+                “Accepted” means WhatsApp queued the message. Final delivery is
+                confirmed a moment later — the Sent/Failed numbers in the
+                history update automatically as each recipient is delivered or
+                rejected.
               </p>
               {result.failed > 0 && result.sampleError && (
                 <p className="mt-1 text-xs text-emerald-700/80 dark:text-emerald-300/60">
