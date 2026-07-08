@@ -8,6 +8,7 @@ import { SendCampaignForm } from "@/components/campaigns/send-campaign-form";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
+import { Tooltip } from "@/components/ui/tooltip";
 import { formatDateTime } from "@/lib/utils";
 import type { Campaign, CampaignStatus, Contact } from "@/lib/types";
 
@@ -53,6 +54,24 @@ export default async function CampaignsPage() {
     .order("created_at", { ascending: false })
     .limit(50);
   const campaigns = (data ?? []) as Campaign[];
+
+  // Distinct failure reasons per campaign, so the history table can explain
+  // why sends failed instead of just showing a count.
+  const campaignIds = campaigns.map((c) => c.id);
+  const { data: failedMessages } = campaignIds.length
+    ? await supabase
+        .from("messages")
+        .select("campaign_id, error")
+        .eq("status", "failed")
+        .in("campaign_id", campaignIds)
+    : { data: [] };
+  const failureReasonsByCampaign = new Map<string, string[]>();
+  for (const m of failedMessages ?? []) {
+    if (!m.campaign_id || !m.error) continue;
+    const existing = failureReasonsByCampaign.get(m.campaign_id) ?? [];
+    if (!existing.includes(m.error)) existing.push(m.error);
+    failureReasonsByCampaign.set(m.campaign_id, existing);
+  }
 
   return (
     <div>
@@ -116,9 +135,28 @@ export default async function CampaignsPage() {
                           {c.messages_failed}
                         </TD>
                         <TD>
-                          <Badge tone={STATUS_TONE[c.status] ?? "neutral"}>
-                            {c.status}
-                          </Badge>
+                          {(() => {
+                            const reasons = failureReasonsByCampaign.get(c.id);
+                            const badge = (
+                              <Badge tone={STATUS_TONE[c.status] ?? "neutral"}>
+                                {c.status}
+                              </Badge>
+                            );
+                            if (!reasons?.length) return badge;
+                            return (
+                              <Tooltip
+                                content={
+                                  <ul className="space-y-1">
+                                    {reasons.map((r, i) => (
+                                      <li key={i}>{r}</li>
+                                    ))}
+                                  </ul>
+                                }
+                              >
+                                {badge}
+                              </Tooltip>
+                            );
+                          })()}
                         </TD>
                       </TR>
                     ))}
