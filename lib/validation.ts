@@ -55,11 +55,15 @@ export const sendCampaignSchema = z.object({
     .trim()
     .min(1, "Campaign name is required")
     .max(120, "Campaign name is too long"),
-  templateName: z.string().trim().max(120).optional(),
+  /** Name of an APPROVED template on the WABA. Verified server-side. */
+  templateName: z.string().trim().max(512).optional(),
+  /** Language code of the chosen template, e.g. "en". */
+  templateLang: z.string().trim().max(16).optional(),
+  /** Header media URL — an image or video link, depending on the template. */
   imageUrl: z
     .string()
     .trim()
-    .url("Image URL must be a valid https URL")
+    .url("Header media URL must be a valid https URL")
     .optional()
     .or(z.literal("")),
   contactIds: z.array(z.string().uuid()).min(1, "Select at least one contact"),

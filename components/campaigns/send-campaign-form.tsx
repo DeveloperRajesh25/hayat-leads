@@ -9,14 +9,25 @@ import {
   CheckCircle2,
   Users,
   Search,
+  LayoutTemplate,
+  Video,
+  FileText,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { publicConfig } from "@/lib/config";
+import {
+  headerMediaLabel,
+  isMediaHeader,
+  previewBody,
+  templateKey,
+  type WhatsappTemplate,
+} from "@/lib/templates";
 import type { Contact } from "@/lib/types";
 
 interface SendResult {
@@ -30,14 +41,50 @@ export function SendCampaignForm({
   contacts,
   alreadyMessagedIds,
   configured,
+  templates,
+  templatesError,
+  defaultTemplateName,
 }: {
   contacts: Pick<Contact, "id" | "name" | "phone">[];
   alreadyMessagedIds: string[];
   configured: boolean;
+  templates: WhatsappTemplate[];
+  templatesError: string | null;
+  defaultTemplateName: string;
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [imageUrl, setImageUrl] = useState(publicConfig.whatsappImageUrl);
+
+  // Start on the template named by NEXT_PUBLIC_WHATSAPP_TEMPLATE_NAME when it
+  // is still approved, otherwise just the first available one.
+  const [selectedKey, setSelectedKey] = useState<string>(() => {
+    const preferred =
+      templates.find((t) => t.name === defaultTemplateName) ?? templates[0];
+    return preferred ? templateKey(preferred) : "";
+  });
+
+  const selectedTemplate = useMemo(
+    () => templates.find((t) => templateKey(t) === selectedKey) ?? null,
+    [templates, selectedKey],
+  );
+
+  // Header media is per-template: each template has its own image/video, and a
+  // video template can't reuse the image default. Keyed so switching back and
+  // forth doesn't lose what you typed.
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const t of templates) {
+      initial[templateKey(t)] =
+        t.headerFormat === "IMAGE" ? publicConfig.whatsappImageUrl : "";
+    }
+    return initial;
+  });
+
+  const needsMedia = selectedTemplate
+    ? isMediaHeader(selectedTemplate.headerFormat)
+    : false;
+  const mediaUrl = selectedKey ? (mediaUrls[selectedKey] ?? "") : "";
+
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<SendResult | null>(null);
@@ -84,9 +131,14 @@ export function SendCampaignForm({
     });
   }
 
-  const disabled = contacts.length === 0 || !configured;
+  // Sending is blocked when there is nothing to send, no credentials, no
+  // template chosen, or a media template with no media URL filled in.
+  const missingMedia = needsMedia && mediaUrl.trim() === "";
+  const disabled =
+    contacts.length === 0 || !configured || !selectedTemplate || missingMedia;
 
   async function handleSend() {
+    if (!selectedTemplate) return;
     setSending(true);
     setError(null);
     setResult(null);
@@ -96,7 +148,9 @@ export function SendCampaignForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim() || `Campaign ${new Date().toLocaleDateString()}`,
-          imageUrl: imageUrl.trim(),
+          templateName: selectedTemplate.name,
+          templateLang: selectedTemplate.language,
+          imageUrl: needsMedia ? mediaUrl.trim() : "",
           contactIds: Array.from(selectedIds),
         }),
       });
@@ -149,25 +203,122 @@ export function SendCampaignForm({
         </div>
 
         <div>
-          <Label htmlFor="image-url">
+          <Label htmlFor="template">
             <span className="inline-flex items-center gap-1">
-              <ImageIcon className="h-3.5 w-3.5" /> Header image URL
+              <LayoutTemplate className="h-3.5 w-3.5" /> Template
             </span>
           </Label>
-          <Input
-            id="image-url"
-            placeholder="https://…/banner.jpg"
-            value={imageUrl}
-            onChange={(e) => setImageUrl(e.target.value)}
-            disabled={sending}
-          />
-          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-            Sent to every customer. Must be a public, direct image link
-            (JPG/PNG). Google Drive share links are auto-converted — just make
-            sure the file is shared as “Anyone with the link”. Defaults to
-            <code className="mx-1">NEXT_PUBLIC_WHATSAPP_IMAGE_URL</code>.
-          </p>
+          {templates.length === 0 ? (
+            <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                {templatesError ??
+                  "No approved templates found on this WhatsApp Business Account."}
+              </span>
+            </div>
+          ) : (
+            <>
+              <Select
+                id="template"
+                value={selectedKey}
+                onChange={(e) => setSelectedKey(e.target.value)}
+                disabled={sending}
+              >
+                {templates.map((t) => (
+                  <option key={templateKey(t)} value={templateKey(t)}>
+                    {t.name} ({t.language})
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                Approved templates from WhatsApp Manager. Create or edit them
+                there — new ones show up here automatically.
+              </p>
+            </>
+          )}
         </div>
+
+        {selectedTemplate && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <Badge tone="neutral">
+                <span className="inline-flex items-center gap-1">
+                  {selectedTemplate.headerFormat === "VIDEO" ? (
+                    <Video className="h-3 w-3" />
+                  ) : selectedTemplate.headerFormat === "IMAGE" ? (
+                    <ImageIcon className="h-3 w-3" />
+                  ) : (
+                    <FileText className="h-3 w-3" />
+                  )}
+                  {selectedTemplate.headerFormat === "NONE"
+                    ? "No header"
+                    : `${selectedTemplate.headerFormat} header`}
+                </span>
+              </Badge>
+              {selectedTemplate.urlButtonIndex !== null && (
+                <Badge tone="success">Form link button</Badge>
+              )}
+              {selectedTemplate.bodyVariableCount === 0 && (
+                <Badge tone="neutral">No name personalization</Badge>
+              )}
+            </div>
+            {selectedTemplate.headerText && (
+              <p className="mb-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                {selectedTemplate.headerText}
+              </p>
+            )}
+            <p className="max-h-32 overflow-y-auto whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
+              {previewBody(selectedTemplate, "<customer name>")}
+            </p>
+          </div>
+        )}
+
+        {selectedTemplate && needsMedia && (
+          <div>
+            <Label htmlFor="image-url">
+              <span className="inline-flex items-center gap-1">
+                {selectedTemplate.headerFormat === "VIDEO" ? (
+                  <Video className="h-3.5 w-3.5" />
+                ) : (
+                  <ImageIcon className="h-3.5 w-3.5" />
+                )}{" "}
+                {headerMediaLabel(selectedTemplate.headerFormat)}
+              </span>
+            </Label>
+            <Input
+              id="image-url"
+              placeholder={
+                selectedTemplate.headerFormat === "VIDEO"
+                  ? "https://…/clip.mp4"
+                  : "https://…/banner.jpg"
+              }
+              value={mediaUrl}
+              onChange={(e) =>
+                setMediaUrls((prev) => ({
+                  ...prev,
+                  [selectedKey]: e.target.value,
+                }))
+              }
+              disabled={sending}
+            />
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              {selectedTemplate.headerFormat === "VIDEO" ? (
+                <>
+                  This template’s header is a video, so it needs a public, direct
+                  MP4 link (not a YouTube page).
+                </>
+              ) : (
+                <>
+                  Sent to every customer. Must be a public, direct image link
+                  (JPG/PNG). Defaults to
+                  <code className="mx-1">NEXT_PUBLIC_WHATSAPP_IMAGE_URL</code>.
+                </>
+              )}{" "}
+              Google Drive share links are auto-converted — just make sure the
+              file is shared as “Anyone with the link”.
+            </p>
+          </div>
+        )}
 
         <div>
           <div className="mb-2 flex items-center justify-between">
@@ -295,8 +446,9 @@ export function SendCampaignForm({
         ) : (
           <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/20 dark:bg-amber-500/10 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-amber-800 dark:text-amber-300">
-              Send WhatsApp messages to {selectedIds.size.toLocaleString()}{" "}
-              contact{selectedIds.size === 1 ? "" : "s"} now?
+              Send <span className="font-semibold">{selectedTemplate?.name}</span>{" "}
+              to {selectedIds.size.toLocaleString()} contact
+              {selectedIds.size === 1 ? "" : "s"} now?
             </p>
             <div className="flex items-center gap-2">
               <Button

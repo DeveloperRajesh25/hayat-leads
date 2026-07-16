@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import { Send } from "lucide-react";
 import { getSessionUser } from "@/lib/auth";
-import { isWhatsappConfigured } from "@/lib/config";
+import {
+  isWhatsappConfigured,
+  isWhatsappTemplateListingConfigured,
+  publicConfig,
+} from "@/lib/config";
+import { fetchApprovedTemplates } from "@/lib/whatsapp";
 import { PageHeader } from "@/components/admin/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { SendCampaignForm } from "@/components/campaigns/send-campaign-form";
@@ -24,6 +29,17 @@ const STATUS_TONE: Record<CampaignStatus, BadgeTone> = {
 
 export default async function CampaignsPage() {
   const { supabase } = await getSessionUser();
+
+  // Approved templates on the WABA — the campaign form lets you pick any of
+  // them, so this list is read live rather than pinned to one env var.
+  const templateResult = isWhatsappTemplateListingConfigured()
+    ? await fetchApprovedTemplates()
+    : {
+        ok: false,
+        templates: [],
+        error:
+          "Set WHATSAPP_BUSINESS_ACCOUNT_ID in your environment to list your WhatsApp templates.",
+      };
 
   const { data: contactsData } = await supabase
     .from("contacts")
@@ -86,6 +102,9 @@ export default async function CampaignsPage() {
             contacts={contacts}
             alreadyMessagedIds={alreadyMessagedIds}
             configured={isWhatsappConfigured()}
+            templates={templateResult.templates}
+            templatesError={templateResult.error ?? null}
+            defaultTemplateName={publicConfig.whatsappTemplateName}
           />
         </div>
 

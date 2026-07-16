@@ -72,11 +72,36 @@ export const serverConfig = {
       process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN,
     );
   },
+  get whatsappTwoStepPin(): string {
+    return requireEnv(
+      "WHATSAPP_TWO_STEP_PIN",
+      process.env.WHATSAPP_TWO_STEP_PIN,
+    );
+  },
+  /** WABA id — required to list the message templates available for sending. */
+  get whatsappBusinessAccountId(): string {
+    return requireEnv(
+      "WHATSAPP_BUSINESS_ACCOUNT_ID",
+      process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
+    );
+  },
 } as const;
 
 /** True when WhatsApp sending is configured (used to surface helpful UI hints). */
 export function isWhatsappConfigured(): boolean {
   return Boolean(
     process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID,
+  );
+}
+
+/**
+ * True when we can list templates from the WhatsApp Business Account. Sending
+ * only needs the phone number id, but the template picker additionally needs
+ * the WABA id, so this is checked separately.
+ */
+export function isWhatsappTemplateListingConfigured(): boolean {
+  return Boolean(
+    process.env.WHATSAPP_ACCESS_TOKEN &&
+      process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
   );
 }

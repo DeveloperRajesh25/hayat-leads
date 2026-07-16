@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { sendCampaignSchema } from "@/lib/validation";
-import { sendTemplateMessage } from "@/lib/whatsapp";
+import { isMediaHeader, resolveTemplate, sendTemplateMessage } from "@/lib/whatsapp";
 import { isWhatsappConfigured, publicConfig } from "@/lib/config";
 import type { Contact } from "@/lib/types";
 
@@ -47,12 +47,45 @@ export async function POST(req: Request) {
     );
   }
 
-  const imageUrl =
-    parsed.data.imageUrl && parsed.data.imageUrl.length > 0
-      ? parsed.data.imageUrl
-      : publicConfig.whatsappImageUrl;
+  // Resolve the requested template against the live WABA list. The client only
+  // sends a name, so this both validates the choice (an unapproved or deleted
+  // template would fail per-contact with an opaque Meta error) and gives us the
+  // component shape to build each payload from.
   const templateName =
     parsed.data.templateName || publicConfig.whatsappTemplateName;
+  const template = await resolveTemplate(templateName, parsed.data.templateLang);
+
+  if (!template) {
+    return NextResponse.json(
+      {
+        error:
+          `Template "${templateName}" was not found among the approved templates ` +
+          `on this WhatsApp Business Account. Pick another template, or check its ` +
+          `status in WhatsApp Manager.`,
+      },
+      { status: 400 },
+    );
+  }
+
+  // Header media only applies to templates whose header is IMAGE/VIDEO/DOCUMENT.
+  // For a TEXT or headerless template we must send no media at all.
+  const wantsMedia = isMediaHeader(template.headerFormat);
+  const mediaUrl = !wantsMedia
+    ? ""
+    : parsed.data.imageUrl && parsed.data.imageUrl.length > 0
+      ? parsed.data.imageUrl
+      : publicConfig.whatsappImageUrl;
+
+  if (wantsMedia && !mediaUrl) {
+    return NextResponse.json(
+      {
+        error:
+          `Template "${template.name}" has a ${template.headerFormat} header. ` +
+          `Add a header ${template.headerFormat.toLowerCase()} URL before sending.`,
+      },
+      { status: 400 },
+    );
+  }
 
   // Load recipients — restricted to the selected contact ids.
   const { data: contactsData, error: contactsError } = await supabase
@@ -82,11 +115,12 @@ export async function POST(req: Request) {
     .from("campaigns")
     .insert({
       name: parsed.data.name,
-      template_name: templateName,
-      image_url: imageUrl || null,
+      template_name: template.name,
+      image_url: mediaUrl || null,
       form_base_url: `${publicConfig.appUrl}/form/`,
-      message_body:
-        "Hi {{customer_name}}, Thank you for your interest in Hayat Interiors. Please fill the following form.",
+      // Record the template's real body text, so the history reflects what was
+      // actually sent even after the template is later edited in Meta.
+      message_body: template.bodyText,
       total_contacts: contacts.length,
       status: "sending",
       created_by: user.id,
@@ -111,7 +145,9 @@ export async function POST(req: Request) {
   const outcomes: Outcome[] = new Array(contacts.length);
   let cursor = 0;
 
-  async function worker() {
+  // Arrow function (not a hoisted declaration) so the narrowed, non-null
+  // `template` from the guard above stays visible inside the closure.
+  const worker = async () => {
     while (cursor < contacts.length) {
       const i = cursor++;
       const c = contacts[i];
@@ -119,8 +155,8 @@ export async function POST(req: Request) {
         to: c.phone,
         customerName: c.name,
         token: c.token,
-        templateName,
-        imageUrl,
+        template,
+        mediaUrl,
       });
       outcomes[i] = {
         contact: c,
@@ -129,10 +165,12 @@ export async function POST(req: Request) {
         error: result.error,
       };
     }
-  }
+  };
 
   await Promise.all(
-    Array.from({ length: Math.min(CONCURRENCY, contacts.length) }, worker),
+    Array.from({ length: Math.min(CONCURRENCY, contacts.length) }, () =>
+      worker(),
+    ),
   );
 
   // Persist per-contact message rows.
