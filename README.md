@@ -184,9 +184,12 @@ The `GET /api/webhook` handler answers Meta's verification challenge; the
 4. Deploy. Then point the WhatsApp webhook + template button base URL at the
    production domain.
 
-> **Sending at scale:** campaign sending runs in a serverless function
-> (`maxDuration = 60s`, 5 concurrent sends). For very large lists (thousands),
-> split into multiple campaigns or move sending to a background queue / cron.
+> **Sending at scale:** campaigns are queued instantly, then sent in bounded
+> batches (40 contacts, 10 concurrent) — each batch call runs well inside the
+> serverless `maxDuration = 60s`, so lists of any size complete as a series of
+> small requests instead of one long one. Progress is saved after every
+> contact, so an interrupted send (closed tab, network drop) can be picked up
+> again from "Resume sending" in the campaign history table.
 
 Works on any Node host (`npm run build && npm start`).
 

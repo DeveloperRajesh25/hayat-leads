@@ -28,14 +28,10 @@ import {
   templateKey,
   type WhatsappTemplate,
 } from "@/lib/templates";
+import { runCampaignBatches, type CampaignBatchProgress } from "@/lib/campaign-batch-client";
 import type { Contact } from "@/lib/types";
 
-interface SendResult {
-  total: number;
-  sent: number;
-  failed: number;
-  sampleError?: string | null;
-}
+type SendResult = CampaignBatchProgress;
 
 export function SendCampaignForm({
   contacts,
@@ -159,12 +155,23 @@ export function SendCampaignForm({
         setError(data?.error ?? "Failed to send campaign.");
         return;
       }
-      setResult(data as SendResult);
+
+      // Sending itself happens as a series of small batches so a large list
+      // can't time out a single request — see lib/campaign-batch-client.ts.
+      // Progress is persisted server-side after every batch, so if this loop
+      // is interrupted (closed tab, network drop) the campaign can be
+      // finished later from "Resume sending" in the history table.
       setName("");
       setConfirming(false);
+      await runCampaignBatches(data.campaignId, data.total, setResult);
       router.refresh();
-    } catch {
-      setError("Network error while sending campaign.");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `${err.message} You can continue this campaign from "Resume sending" in the history below.`
+          : "Network error while sending campaign.",
+      );
+      router.refresh();
     } finally {
       setSending(false);
     }
@@ -410,7 +417,13 @@ export function SendCampaignForm({
           <div className="flex items-start gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
-              <p className="font-medium">Campaign sent.</p>
+              <p className="font-medium">
+                {sending
+                  ? `Sending… ${result.sent + result.failed} of ${result.total}`
+                  : error
+                    ? `Stopped at ${result.sent + result.failed} of ${result.total}.`
+                    : "Campaign sent."}
+              </p>
               <p className="text-emerald-700 dark:text-emerald-300/80">
                 {result.sent} accepted by WhatsApp · {result.failed} rejected of{" "}
                 {result.total}.

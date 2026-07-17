@@ -42,6 +42,7 @@ export interface Campaign {
   id: string;
   name: string;
   template_name: string;
+  template_lang: string | null;
   image_url: string | null;
   form_base_url: string | null;
   message_body: string | null;

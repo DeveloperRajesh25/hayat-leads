@@ -80,6 +80,7 @@ create table if not exists public.campaigns (
   id              uuid primary key default gen_random_uuid(),
   name            text not null,
   template_name   text not null,
+  template_lang   text,
   image_url       text,
   form_base_url   text,
   message_body    text,
@@ -92,6 +93,11 @@ create table if not exists public.campaigns (
   sent_at         timestamptz,
   created_by      uuid references auth.users(id) on delete set null
 );
+
+-- Migrating an existing database created before batched sending? This adds
+-- the column the batch endpoint needs to re-resolve the exact template used,
+-- without touching the rest of the table.
+alter table public.campaigns add column if not exists template_lang text;
 
 create index if not exists campaigns_created_at_idx on public.campaigns (created_at desc);
 
@@ -114,6 +120,8 @@ create table if not exists public.messages (
 create index if not exists messages_campaign_idx on public.messages (campaign_id);
 create index if not exists messages_contact_idx  on public.messages (contact_id);
 create index if not exists messages_wa_id_idx     on public.messages (wa_message_id);
+-- Batch sending repeatedly pulls the next page of pending rows per campaign.
+create index if not exists messages_campaign_status_idx on public.messages (campaign_id, status);
 
 drop trigger if exists messages_set_updated_at on public.messages;
 create trigger messages_set_updated_at

@@ -10,6 +10,7 @@ import { fetchApprovedTemplates } from "@/lib/whatsapp";
 import { PageHeader } from "@/components/admin/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { SendCampaignForm } from "@/components/campaigns/send-campaign-form";
+import { ResumeCampaignButton } from "@/components/campaigns/resume-campaign-button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -161,8 +162,7 @@ export default async function CampaignsPage() {
                                 {c.status}
                               </Badge>
                             );
-                            if (!reasons?.length) return badge;
-                            return (
+                            const badgeWithTooltip = reasons?.length ? (
                               <Tooltip
                                 content={
                                   <ul className="space-y-1">
@@ -174,6 +174,18 @@ export default async function CampaignsPage() {
                               >
                                 {badge}
                               </Tooltip>
+                            ) : (
+                              badge
+                            );
+                            if (c.status !== "sending") return badgeWithTooltip;
+                            return (
+                              <div className="flex flex-col items-start gap-1.5">
+                                {badgeWithTooltip}
+                                <ResumeCampaignButton
+                                  campaignId={c.id}
+                                  total={c.total_contacts}
+                                />
+                              </div>
                             );
                           })()}
                         </TD>

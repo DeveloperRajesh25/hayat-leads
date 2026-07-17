@@ -1,21 +1,22 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { sendCampaignSchema } from "@/lib/validation";
-import { isMediaHeader, resolveTemplate, sendTemplateMessage } from "@/lib/whatsapp";
+import { isMediaHeader, resolveTemplate } from "@/lib/whatsapp";
 import { isWhatsappConfigured, publicConfig } from "@/lib/config";
 import type { Contact } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-// Allow up to 60s on Vercel for medium batches. For very large lists, send in
-// multiple campaigns or move sending to a background worker (see README).
-export const maxDuration = 60;
 
-// Higher concurrency clears large batches within Vercel's 60s window. Meta's
-// per-number rate limit is high (80 msg/s default) so this stays well under it;
-// transient rate-limit errors are retried inside sendTemplateMessage.
-const CONCURRENCY = 10;
-
+/**
+ * Creates the campaign and queues one `messages` row per contact (status
+ * "pending"). It does NOT talk to WhatsApp — actual sending happens in small,
+ * repeated calls to /api/campaigns/[id]/send-batch, driven by the client (see
+ * lib/campaign-batch-client.ts). Sending 500 contacts synchronously here used
+ * to blow past Vercel's 60s function limit and lose all progress when killed
+ * mid-batch; queuing up front and sending in bounded batches keeps every
+ * request fast and makes progress durable and resumable.
+ */
 export async function POST(req: Request) {
   const { supabase, user } = await getSessionUser();
   if (!user) {
@@ -116,6 +117,7 @@ export async function POST(req: Request) {
     .insert({
       name: parsed.data.name,
       template_name: template.name,
+      template_lang: template.language,
       image_url: mediaUrl || null,
       form_base_url: `${publicConfig.appUrl}/form/`,
       // Record the template's real body text, so the history reflects what was
@@ -135,81 +137,32 @@ export async function POST(req: Request) {
     );
   }
 
-  // Send with limited concurrency.
-  type Outcome = {
-    contact: (typeof contacts)[number];
-    status: "sent" | "failed";
-    messageId?: string;
-    error?: string;
-  };
-  const outcomes: Outcome[] = new Array(contacts.length);
-  let cursor = 0;
-
-  // Arrow function (not a hoisted declaration) so the narrowed, non-null
-  // `template` from the guard above stays visible inside the closure.
-  const worker = async () => {
-    while (cursor < contacts.length) {
-      const i = cursor++;
-      const c = contacts[i];
-      const result = await sendTemplateMessage({
-        to: c.phone,
-        customerName: c.name,
-        token: c.token,
-        template,
-        mediaUrl,
-      });
-      outcomes[i] = {
-        contact: c,
-        status: result.status,
-        messageId: result.messageId,
-        error: result.error,
-      };
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(CONCURRENCY, contacts.length) }, () =>
-      worker(),
-    ),
-  );
-
-  // Persist per-contact message rows.
-  const messageRows = outcomes.map((o) => ({
+  // Queue every contact as a pending message row. The batch endpoint claims
+  // and sends these a page at a time, so this insert is the only thing that
+  // needs to happen inside this request.
+  const messageRows = contacts.map((c) => ({
     campaign_id: campaign.id,
-    contact_id: o.contact.id,
-    phone: o.contact.phone,
-    wa_message_id: o.messageId ?? null,
-    status: o.status,
-    error: o.error ?? null,
+    contact_id: c.id,
+    phone: c.phone,
+    status: "pending" as const,
   }));
 
   const { error: messagesError } = await supabase
     .from("messages")
     .insert(messageRows);
+
   if (messagesError) {
-    // Non-fatal: messages couldn't be logged, but sends may have happened.
-    console.error("Failed to insert message rows:", messagesError.message);
+    // Roll the campaign back to failed — nothing was queued, so there's
+    // nothing for the batch endpoint to send.
+    await supabase
+      .from("campaigns")
+      .update({ status: "failed" })
+      .eq("id", campaign.id);
+    return NextResponse.json({ error: messagesError.message }, { status: 500 });
   }
-
-  const sent = outcomes.filter((o) => o.status === "sent").length;
-  const failed = outcomes.length - sent;
-
-  await supabase
-    .from("campaigns")
-    .update({
-      messages_sent: sent,
-      messages_failed: failed,
-      status: sent > 0 ? "completed" : "failed",
-      sent_at: new Date().toISOString(),
-    })
-    .eq("id", campaign.id);
 
   return NextResponse.json({
     campaignId: campaign.id,
     total: contacts.length,
-    sent,
-    failed,
-    // Surface a sample error to help debugging template/setup issues.
-    sampleError: outcomes.find((o) => o.status === "failed")?.error ?? null,
   });
 }
