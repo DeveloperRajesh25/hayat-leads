@@ -24,10 +24,13 @@ interface LiveStats extends Metrics {
  * polled live from /status (which counts the messages rows directly), so what
  * you see is exactly what's in the database — no cached or derived guesses.
  *
- * When a send finishes with failures, it retries them ONCE automatically, then
- * leaves the manual "Retry failed" button for anything still failing (those are
- * almost always permanent — invalid numbers, not on WhatsApp, or a per-recipient
- * cap — so hammering them would only hurt the sender's quality rating).
+ * We deliberately do NOT auto-retry failures. A contact only lands in `failed`
+ * when WhatsApp permanently rejects it (invalid number, not on WhatsApp, or a
+ * per-recipient block) — retrying those can't succeed and only harms the
+ * number's quality rating. Transient rate-limits are kept `pending`, not
+ * failed, and finish on their own. The "Retry failed" button is there for the
+ * rare case a failure really was temporary (e.g. after fixing data or waiting
+ * out a daily cap).
  */
 export function CampaignLivePanel({
   campaignId,
@@ -45,11 +48,9 @@ export function CampaignLivePanel({
   const router = useRouter();
   const [stats, setStats] = useState<LiveStats | null>(null);
   const [driving, setDriving] = useState(autoDrive);
-  const [autoRetrying, setAutoRetrying] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const mounted = useRef(true);
   const idlePolls = useRef(0);
-  const autoRetryUsed = useRef(false);
 
   const poll = useCallback(async () => {
     try {
@@ -92,38 +93,30 @@ export function CampaignLivePanel({
     };
   }, [poll]);
 
-  const retryFailed = useCallback(
-    async (auto = false) => {
-      // Any retry (manual or auto) disables further automatic retries, so a
-      // permanent failure can never loop.
-      autoRetryUsed.current = true;
-      setActionError(null);
-      if (auto) setAutoRetrying(true);
-      setDriving(true);
-      try {
-        const res = await fetch(`/api/campaigns/${campaignId}/retry-failed`, {
-          method: "POST",
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setActionError(data?.error ?? "Could not retry failed messages.");
-          return;
-        }
-        await poll();
-        if (data.requeued > 0) {
-          await runCampaignBatches(campaignId, total, () => void poll());
-        }
-      } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Could not retry.");
-      } finally {
-        setDriving(false);
-        setAutoRetrying(false);
-        void poll();
-        router.refresh();
+  const retryFailed = useCallback(async () => {
+    setActionError(null);
+    setDriving(true);
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/retry-failed`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionError(data?.error ?? "Could not retry failed messages.");
+        return;
       }
-    },
-    [campaignId, total, poll, router],
-  );
+      await poll();
+      if (data.requeued > 0) {
+        await runCampaignBatches(campaignId, total, () => void poll());
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not retry.");
+    } finally {
+      setDriving(false);
+      void poll();
+      router.refresh();
+    }
+  }, [campaignId, total, poll, router]);
 
   const resume = useCallback(async () => {
     setActionError(null);
@@ -165,15 +158,6 @@ export function CampaignLivePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignId]);
 
-  // Auto-retry ONCE when a run finishes with failures.
-  useEffect(() => {
-    if (!stats || driving || autoRetryUsed.current) return;
-    if (stats.pending === 0 && stats.failed > 0) {
-      const t = setTimeout(() => void retryFailed(true), 3500);
-      return () => clearTimeout(t);
-    }
-  }, [stats, driving, retryFailed]);
-
   const s = stats;
   const totalN = s?.total ?? total;
   const processed = s ? totalN - s.pending : 0;
@@ -183,13 +167,11 @@ export function CampaignLivePanel({
 
   const headline = !s
     ? "Starting…"
-    : autoRetrying
-      ? `Auto-retrying ${s.failed} failed…`
-      : busy
-        ? `Sending — ${processed} of ${totalN} processed`
-        : s.failed > 0
-          ? `Finished · ${s.failed} still failing`
-          : "All done — every contact sent";
+    : busy
+      ? `Sending — ${processed} of ${totalN} processed`
+      : s.failed > 0
+        ? `Finished · ${s.accepted} accepted, ${s.failed} rejected by WhatsApp`
+        : "All done — every contact accepted";
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -203,7 +185,7 @@ export function CampaignLivePanel({
           ) : (
             <span className="grid h-8 w-8 place-items-center rounded-full bg-brand-100 dark:bg-brand-500/15">
               <Loader2
-                className={`h-4 w-4 text-brand-600 dark:text-brand-400 ${busy || autoRetrying ? "animate-spin" : ""}`}
+                className={`h-4 w-4 text-brand-600 dark:text-brand-400 ${busy ? "animate-spin" : ""}`}
               />
             </span>
           )}
@@ -248,7 +230,7 @@ export function CampaignLivePanel({
         <p className="text-center text-xs text-slate-400 dark:text-slate-500">
           {s
             ? `${s.accepted} accepted + ${s.failed} failed + ${s.pending} pending = ${totalN} contacts`
-            : " "}
+            : " "}
         </p>
 
         {!!s && (s.pending > 0 || s.failed > 0) && (
@@ -263,7 +245,7 @@ export function CampaignLivePanel({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => retryFailed(false)}
+                onClick={retryFailed}
                 loading={busy}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
