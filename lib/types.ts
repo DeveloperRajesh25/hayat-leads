@@ -67,6 +67,25 @@ export interface Message {
   updated_at: string;
 }
 
+/**
+ * Live delivery breakdown for one campaign, counted directly from the
+ * `messages` rows (the single source of truth). See the `campaign_stats` view.
+ * `sent + delivered + read + failed + pending === total`.
+ */
+export interface CampaignStats {
+  total: number;
+  pending: number;
+  /** Accepted by Meta, not yet confirmed delivered. */
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  /** Convenience rollups (derived): accepted = sent+delivered+read. */
+  accepted: number;
+  /** delivered + read. */
+  deliveredTotal: number;
+}
+
 export interface LeadResponse {
   id: string;
   contact_id: string | null;

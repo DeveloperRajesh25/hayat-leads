@@ -6,7 +6,6 @@ import {
   Send,
   Image as ImageIcon,
   AlertTriangle,
-  CheckCircle2,
   Users,
   Search,
   LayoutTemplate,
@@ -28,10 +27,8 @@ import {
   templateKey,
   type WhatsappTemplate,
 } from "@/lib/templates";
-import { runCampaignBatches, type CampaignBatchProgress } from "@/lib/campaign-batch-client";
+import { CampaignLivePanel } from "@/components/campaigns/campaign-live-panel";
 import type { Contact } from "@/lib/types";
-
-type SendResult = CampaignBatchProgress;
 
 export function SendCampaignForm({
   contacts,
@@ -83,7 +80,11 @@ export function SendCampaignForm({
 
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
-  const [result, setResult] = useState<SendResult | null>(null);
+  const [activeCampaign, setActiveCampaign] = useState<{
+    id: string;
+    name: string;
+    total: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
@@ -137,13 +138,14 @@ export function SendCampaignForm({
     if (!selectedTemplate) return;
     setSending(true);
     setError(null);
-    setResult(null);
+    const campaignName =
+      name.trim() || `Campaign ${new Date().toLocaleDateString()}`;
     try {
       const res = await fetch("/api/campaigns/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: name.trim() || `Campaign ${new Date().toLocaleDateString()}`,
+          name: campaignName,
           templateName: selectedTemplate.name,
           templateLang: selectedTemplate.language,
           imageUrl: needsMedia ? mediaUrl.trim() : "",
@@ -156,22 +158,20 @@ export function SendCampaignForm({
         return;
       }
 
-      // Sending itself happens as a series of small batches so a large list
-      // can't time out a single request — see lib/campaign-batch-client.ts.
-      // Progress is persisted server-side after every batch, so if this loop
-      // is interrupted (closed tab, network drop) the campaign can be
-      // finished later from "Resume sending" in the history table.
+      // Hand the campaign straight to the live panel: it drives the send loop
+      // (the server auto-advances too) AND polls the real numbers from the
+      // database, so the admin sees an immediate, honest, focused view of
+      // exactly what's happening — no waiting for a page refresh.
       setName("");
       setConfirming(false);
-      await runCampaignBatches(data.campaignId, data.total, setResult);
-      router.refresh();
+      setActiveCampaign({ id: data.campaignId, name: campaignName, total: data.total });
+      router.refresh(); // surface it in the history table right away too
     } catch (err) {
       setError(
         err instanceof Error
-          ? `${err.message} You can continue this campaign from "Resume sending" in the history below.`
-          : "Network error while sending campaign.",
+          ? err.message
+          : "Network error while starting campaign.",
       );
-      router.refresh();
     } finally {
       setSending(false);
     }
@@ -413,80 +413,21 @@ export function SendCampaignForm({
           </div>
         )}
 
-        {result && (() => {
-          // Sent + Failed + Pending always equals Total, so the numbers here
-          // match the history table exactly — no more "80 of 462" confusion.
-          const pending = Math.max(
-            0,
-            result.pending ?? result.total - result.sent - result.failed,
-          );
-          const complete = !sending && pending === 0;
-          const paused = !sending && pending > 0; // stopped with work left = resumable
-          const tone = complete
-            ? "emerald"
-            : paused
-              ? "amber"
-              : "sky";
-          const toneClass = {
-            emerald:
-              "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300",
-            amber:
-              "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300",
-            sky: "bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300",
-          }[tone];
-          return (
-            <div className={`flex items-start gap-2 rounded-lg p-3 text-sm ${toneClass}`}>
-              {complete ? (
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              ) : (
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              )}
-              <div>
-                <p className="font-medium">
-                  {sending
-                    ? result.throttled
-                      ? `Pacing for WhatsApp rate limit… ${result.sent + result.failed} of ${result.total} done`
-                      : `Sending… ${result.sent + result.failed} of ${result.total} done`
-                    : complete
-                      ? "Campaign complete — every contact processed."
-                      : `Paused — ${pending} of ${result.total} still to send.`}
-                </p>
-                <p className="opacity-90">
-                  {result.sent} sent · {result.failed} failed · {pending} pending
-                  {" "}of {result.total}.
-                </p>
-                {paused && (
-                  <p className="mt-1 text-xs opacity-80">
-                    The remaining {pending} keep sending automatically in the
-                    background. If they don’t finish, use “Resume sending” on this
-                    campaign in the history table — nobody already sent is
-                    contacted again.
-                  </p>
-                )}
-                {complete && (
-                  <p className="mt-1 text-xs opacity-80">
-                    “Sent” means WhatsApp accepted the message; final delivery is
-                    confirmed a moment later and the history updates automatically.
-                    {result.failed > 0
-                      ? " Use “Retry failed” in the history to re-send only the failures."
-                      : ""}
-                  </p>
-                )}
-                {result.failed > 0 && result.sampleError && (
-                  <p className="mt-1 text-xs opacity-80">
-                    Example error: {result.sampleError}
-                  </p>
-                )}
-              </div>
-            </div>
-          );
-        })()}
+        {activeCampaign && (
+          <CampaignLivePanel
+            key={activeCampaign.id}
+            campaignId={activeCampaign.id}
+            name={activeCampaign.name}
+            total={activeCampaign.total}
+            autoDrive
+            onClose={() => setActiveCampaign(null)}
+          />
+        )}
 
         {/* Confirmation flow (sending real messages is irreversible) */}
         {!confirming ? (
           <Button
             onClick={() => {
-              setResult(null);
               setError(null);
               setConfirming(true);
             }}

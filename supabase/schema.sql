@@ -128,6 +128,39 @@ create trigger messages_set_updated_at
   before update on public.messages
   for each row execute function public.set_updated_at();
 
+-- ---------------------------------------------------------------------------
+-- campaign_stats  (LIVE per-campaign delivery breakdown)
+-- ---------------------------------------------------------------------------
+-- The single source of truth for how a campaign is doing. Counts are derived
+-- directly from the `messages` rows every time they're read, so they can never
+-- drift the way denormalized counters on the campaigns table did. Every screen
+-- (history table, live send panel, status endpoint) reads from here.
+--
+--   total     = recipients queued for this campaign
+--   pending   = not yet sent (queued, or waiting out a rate limit)
+--   sent      = accepted by Meta, not yet confirmed delivered
+--   delivered = delivered to the handset
+--   read      = opened by the recipient
+--   failed    = permanently failed for this recipient
+--
+-- "Accepted by Meta" = sent + delivered + read. "Delivered" = delivered + read.
+-- sent + delivered + read + failed + pending always equals total.
+create or replace view public.campaign_stats as
+select
+  c.id                                                as campaign_id,
+  c.total_contacts                                    as total,
+  count(m.*) filter (where m.status = 'pending')      as pending,
+  count(m.*) filter (where m.status = 'sent')         as sent,
+  count(m.*) filter (where m.status = 'delivered')    as delivered,
+  count(m.*) filter (where m.status = 'read')         as read,
+  count(m.*) filter (where m.status = 'failed')       as failed,
+  count(m.*)                                          as message_rows
+from public.campaigns c
+left join public.messages m on m.campaign_id = c.id
+group by c.id, c.total_contacts;
+
+grant select on public.campaign_stats to authenticated;
+
 -- ===========================================================================
 -- 5. responses  (customer form submissions)
 -- ===========================================================================

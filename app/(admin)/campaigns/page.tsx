@@ -17,17 +17,32 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
 import { formatDateTime } from "@/lib/utils";
-import type { Campaign, CampaignStatus, Contact } from "@/lib/types";
+import { getCampaignStatsMap } from "@/lib/campaign-stats";
+import type { Campaign, Contact } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Campaigns" };
 export const dynamic = "force-dynamic";
 
-const STATUS_TONE: Record<CampaignStatus, BadgeTone> = {
-  draft: "neutral",
-  sending: "info",
-  completed: "success",
-  failed: "danger",
-};
+/**
+ * The one place a campaign's headline status is decided — derived from the LIVE
+ * message counts, never from a stored column, so the label always agrees with
+ * the numbers next to it.
+ */
+function deriveStatus(
+  campaignStatus: string,
+  pending: number,
+  accepted: number,
+  failed: number,
+): { label: string; tone: BadgeTone } {
+  if (pending > 0) {
+    return campaignStatus === "sending"
+      ? { label: "sending", tone: "info" }
+      : { label: "incomplete", tone: "warning" };
+  }
+  if (failed > 0 && accepted === 0) return { label: "failed", tone: "danger" };
+  if (failed > 0) return { label: "completed", tone: "success" };
+  return { label: "completed", tone: "success" };
+}
 
 export default async function CampaignsPage() {
   const { supabase } = await getSessionUser();
@@ -70,12 +85,18 @@ export default async function CampaignsPage() {
     .from("campaigns")
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(30);
   const campaigns = (data ?? []) as Campaign[];
+
+  const campaignIds = campaigns.map((c) => c.id);
+
+  // LIVE delivery breakdown per campaign, counted straight from the messages
+  // table (the single source of truth). Everything shown below comes from here
+  // — no stored/denormalized counters that could drift.
+  const statsByCampaign = await getCampaignStatsMap(campaignIds);
 
   // Distinct failure reasons per campaign, so the history table can explain
   // why sends failed instead of just showing a count.
-  const campaignIds = campaigns.map((c) => c.id);
   const { data: failedMessages } = campaignIds.length
     ? await supabase
         .from("messages")
@@ -132,7 +153,20 @@ export default async function CampaignsPage() {
                     <TR className="hover:bg-transparent">
                       <TH>Campaign</TH>
                       <TH className="text-center">Contacts</TH>
-                      <TH className="text-center">Sent</TH>
+                      <TH className="text-center">
+                        <Tooltip content="Accepted by WhatsApp (sent, delivered or read)">
+                          <span className="underline decoration-dotted">
+                            Accepted
+                          </span>
+                        </Tooltip>
+                      </TH>
+                      <TH className="text-center">
+                        <Tooltip content="Confirmed delivered to the handset (delivered or read)">
+                          <span className="underline decoration-dotted">
+                            Delivered
+                          </span>
+                        </Tooltip>
+                      </TH>
                       <TH className="text-center">Failed</TH>
                       <TH className="text-center">Pending</TH>
                       <TH>Status</TH>
@@ -140,11 +174,42 @@ export default async function CampaignsPage() {
                   </THead>
                   <TBody>
                     {campaigns.map((c) => {
-                      // Sent + Failed + Pending always add up to Contacts, so
-                      // the row reconciles no matter which state it's in.
-                      const pending = Math.max(
-                        0,
-                        c.total_contacts - c.messages_sent - c.messages_failed,
+                      // Every number here is the LIVE count from the messages
+                      // table: accepted + failed + pending === contacts, always.
+                      const st = statsByCampaign.get(c.id) ?? {
+                        total: c.total_contacts,
+                        pending: 0,
+                        sent: 0,
+                        delivered: 0,
+                        read: 0,
+                        failed: 0,
+                        accepted: 0,
+                        deliveredTotal: 0,
+                      };
+                      const status = deriveStatus(
+                        c.status,
+                        st.pending,
+                        st.accepted,
+                        st.failed,
+                      );
+                      const reasons = failureReasonsByCampaign.get(c.id);
+                      const badge = (
+                        <Badge tone={status.tone}>{status.label}</Badge>
+                      );
+                      const badgeWithTooltip = reasons?.length ? (
+                        <Tooltip
+                          content={
+                            <ul className="space-y-1">
+                              {reasons.map((r, i) => (
+                                <li key={i}>{r}</li>
+                              ))}
+                            </ul>
+                          }
+                        >
+                          {badge}
+                        </Tooltip>
+                      ) : (
+                        badge
                       );
                       return (
                         <TR key={c.id}>
@@ -156,64 +221,42 @@ export default async function CampaignsPage() {
                               {formatDateTime(c.sent_at ?? c.created_at)}
                             </div>
                           </TD>
-                          <TD className="text-center">{c.total_contacts}</TD>
-                          <TD className="text-center font-medium text-emerald-600 dark:text-emerald-400">
-                            {c.messages_sent}
+                          <TD className="text-center tabular-nums">
+                            {st.total}
                           </TD>
-                          <TD className="text-center font-medium text-red-600 dark:text-red-400">
-                            {c.messages_failed}
+                          <TD className="text-center font-medium tabular-nums text-sky-600 dark:text-sky-400">
+                            {st.accepted}
                           </TD>
-                          <TD className="text-center font-medium text-amber-600 dark:text-amber-400">
-                            {pending}
+                          <TD className="text-center font-medium tabular-nums text-indigo-600 dark:text-indigo-400">
+                            {st.deliveredTotal}
+                          </TD>
+                          <TD className="text-center font-medium tabular-nums text-red-600 dark:text-red-400">
+                            {st.failed}
+                          </TD>
+                          <TD className="text-center font-medium tabular-nums text-amber-600 dark:text-amber-400">
+                            {st.pending}
                           </TD>
                           <TD>
-                            {(() => {
-                              const reasons = failureReasonsByCampaign.get(c.id);
-                              const badge = (
-                                <Badge tone={STATUS_TONE[c.status] ?? "neutral"}>
-                                  {pending > 0 && c.status !== "sending"
-                                    ? "incomplete"
-                                    : c.status}
-                                </Badge>
-                              );
-                              const badgeWithTooltip = reasons?.length ? (
-                                <Tooltip
-                                  content={
-                                    <ul className="space-y-1">
-                                      {reasons.map((r, i) => (
-                                        <li key={i}>{r}</li>
-                                      ))}
-                                    </ul>
-                                  }
-                                >
-                                  {badge}
-                                </Tooltip>
-                              ) : (
-                                badge
-                              );
-                              const showResume = pending > 0;
-                              const showRetry = c.messages_failed > 0;
-                              if (!showResume && !showRetry)
-                                return badgeWithTooltip;
-                              return (
-                                <div className="flex flex-col items-start gap-1.5">
-                                  {badgeWithTooltip}
-                                  {showResume && (
-                                    <ResumeCampaignButton
-                                      campaignId={c.id}
-                                      total={c.total_contacts}
-                                    />
-                                  )}
-                                  {showRetry && (
-                                    <RetryFailedButton
-                                      campaignId={c.id}
-                                      failed={c.messages_failed}
-                                      total={c.total_contacts}
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })()}
+                            {st.pending > 0 || st.failed > 0 ? (
+                              <div className="flex flex-col items-start gap-1.5">
+                                {badgeWithTooltip}
+                                {st.pending > 0 && (
+                                  <ResumeCampaignButton
+                                    campaignId={c.id}
+                                    total={st.total}
+                                  />
+                                )}
+                                {st.failed > 0 && (
+                                  <RetryFailedButton
+                                    campaignId={c.id}
+                                    failed={st.failed}
+                                    total={st.total}
+                                  />
+                                )}
+                              </div>
+                            ) : (
+                              badgeWithTooltip
+                            )}
                           </TD>
                         </TR>
                       );

@@ -62,54 +62,52 @@ export async function POST(req: Request) {
 
     if (statuses.length > 0) {
       const admin = createAdminClient();
-      const affectedCampaigns = new Set<string>();
+
+      // WhatsApp reports delivery progress as sent -> delivered -> read (or
+      // failed). Never let a later "sent" event clobber a "delivered"/"read"
+      // that already arrived out of order, and never touch a row that is still
+      // `pending` (it hasn't been claimed by a send yet).
+      const RANK: Record<string, number> = {
+        pending: 0,
+        sent: 1,
+        delivered: 2,
+        read: 3,
+        failed: 4,
+      };
 
       for (const s of statuses) {
         if (!s?.id || !s?.status) continue;
-        const update: Record<string, unknown> = {
-          status: s.status,
-          updated_at: new Date().toISOString(),
-        };
+        const incomingRank = RANK[s.status] ?? -1;
+        if (incomingRank < 0) continue;
+
+        const { data: existing } = await admin
+          .from("messages")
+          .select("id, status")
+          .eq("wa_message_id", s.id)
+          .maybeSingle();
+        if (!existing) continue;
+
+        // Only move a message forward along the funnel. `failed` always wins
+        // (a delivery failure is terminal and must be visible).
+        const currentRank = RANK[existing.status] ?? 0;
+        if (s.status !== "failed" && incomingRank <= currentRank) continue;
+
+        const update: Record<string, unknown> = { status: s.status };
         if (s.status === "failed") {
           update.error =
             s.errors?.[0]?.title ??
             s.errors?.[0]?.message ??
             "Delivery failed";
         }
-        // Update the message row and find out which campaign it belongs to so
-        // we can refresh that campaign's aggregate counters below.
-        const { data: updated } = await admin
-          .from("messages")
-          .update(update)
-          .eq("wa_message_id", s.id)
-          .select("campaign_id");
-        for (const row of updated ?? []) {
-          if (row?.campaign_id) affectedCampaigns.add(row.campaign_id);
-        }
+        await admin.from("messages").update(update).eq("id", existing.id);
       }
 
-      // Recompute Sent/Failed for each touched campaign from the source of
-      // truth (the messages table) so the campaign history reflects REAL
-      // delivery — not just what Meta accepted at send time. A message counts
-      // as "failed" only when its final status is `failed`; anything that
-      // reached the customer (sent/delivered/read) counts as delivered.
-      for (const campaignId of affectedCampaigns) {
-        const { data: rows } = await admin
-          .from("messages")
-          .select("status")
-          .eq("campaign_id", campaignId);
-        if (!rows) continue;
-        const failed = rows.filter((r) => r.status === "failed").length;
-        const sent = rows.length - failed;
-        await admin
-          .from("campaigns")
-          .update({
-            messages_sent: sent,
-            messages_failed: failed,
-            status: sent > 0 ? "completed" : "failed",
-          })
-          .eq("id", campaignId);
-      }
+      // NOTE: we deliberately do NOT recompute campaign counters or status
+      // here. Campaign progress is derived live from the `messages` table (the
+      // single source of truth) via the `campaign_stats` view, so there are no
+      // denormalized numbers to drift. The old code here miscounted `pending`
+      // rows as `sent` and force-marked campaigns "completed" mid-send, which
+      // is exactly what made the history numbers jump around.
     }
   } catch (err) {
     console.error("Webhook processing error:", err);
