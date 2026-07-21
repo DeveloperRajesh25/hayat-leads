@@ -65,6 +65,14 @@ export function CampaignHistoryCard({
 
       <DeliveryBar m={metrics} />
 
+      {metrics.failed > 0 && failureReasons.length > 0 && (
+        <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+          <span className="font-medium">WhatsApp rejected {metrics.failed}:</span>{" "}
+          {failureReasons[0]}
+          {failureReasons.length > 1 ? " …" : ""}
+        </p>
+      )}
+
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <StatChips m={metrics} />
         {(metrics.pending > 0 || metrics.failed > 0) && (

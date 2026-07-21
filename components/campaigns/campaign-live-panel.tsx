@@ -17,6 +17,7 @@ import { DeliveryBar, type Metrics } from "@/components/campaigns/campaign-metri
 interface LiveStats extends Metrics {
   status: "draft" | "sending" | "completed" | "failed";
   done: boolean;
+  failureReasons?: { reason: string; count: number }[];
 }
 
 /**
@@ -232,6 +233,30 @@ export function CampaignLivePanel({
             ? `${s.accepted} accepted + ${s.failed} failed + ${s.pending} pending = ${totalN} contacts`
             : " "}
         </p>
+
+        {/* WhatsApp accepts first, then confirms delivery — so Accepted can move
+            to Failed as delivery webhooks arrive. Say so, and show the reason. */}
+        {!!s && s.failed > 0 && !!s.failureReasons?.length && (
+          <div className="rounded-lg border border-red-100 bg-red-50 p-2.5 text-xs dark:border-red-500/20 dark:bg-red-500/10">
+            <p className="font-medium text-red-800 dark:text-red-300">
+              Why {s.failed} {s.failed === 1 ? "message" : "messages"} failed —
+              rejected by WhatsApp:
+            </p>
+            <ul className="mt-1 space-y-0.5 text-red-700 dark:text-red-300/90">
+              {s.failureReasons.map((f, i) => (
+                <li key={i}>
+                  <span className="font-semibold tabular-nums">{f.count}×</span>{" "}
+                  {f.reason}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-[11px] text-red-600/80 dark:text-red-300/60">
+              WhatsApp accepts a message first, then decides delivery a moment
+              later — that’s why “Accepted” can drop as rejections come back.
+              This is WhatsApp’s decision, not a counting error.
+            </p>
+          </div>
+        )}
 
         {!!s && (s.pending > 0 || s.failed > 0) && (
           <div className="flex flex-wrap gap-2 pt-1">
