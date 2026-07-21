@@ -9,14 +9,22 @@ import {
 export type { TemplateHeaderFormat, WhatsappTemplate };
 export { isMediaHeader };
 
-/** Meta error codes that are transient and worth retrying (rate limits / temporary
- *  server issues). Everything else is a permanent failure we should not retry. */
-const RETRYABLE_META_CODES = new Set([
+/**
+ * Meta error codes that mean "your number is being throttled / rate-limited
+ * right now" — the message itself is fine and WILL send once the pressure eases
+ * or the daily window rolls over. These must NEVER be marked as a permanent
+ * `failed`: doing so silently drops recipients. Instead we report them as
+ * `throttled`, the caller leaves the row `pending`, and it is retried later
+ * (by the auto-advance loop, a resume, or the next batch).
+ */
+const THROTTLE_META_CODES = new Set([
   131056, // (Business Account) pair rate limit hit
   130429, // Cloud API rate limit hit
+  131048, // number-level send restriction (spam/quality/volume) — try later
   133016, // temporary account restriction / try again
   131000, // generic "something went wrong", usually transient
-  368, //    temporarily blocked for policy violations (sometimes transient)
+  80007, //  application-level rate limit hit
+  368, //    temporarily blocked for policy violations (usually transient)
 ]);
 
 /** Small sleep helper for backoff between retries. */
@@ -260,7 +268,14 @@ export interface SendTemplateArgs {
 
 export interface WhatsappSendResult {
   ok: boolean;
-  status: "sent" | "failed";
+  /**
+   * - `sent`      — WhatsApp accepted the message.
+   * - `throttled` — a transient rate-limit / number-level restriction. The
+   *                 message was NOT sent, but must be retried later, not failed.
+   * - `failed`    — a permanent error for this recipient (invalid number, not on
+   *                 WhatsApp, per-recipient marketing cap, bad template).
+   */
+  status: "sent" | "throttled" | "failed";
   messageId?: string;
   error?: string;
   raw?: unknown;
@@ -380,12 +395,15 @@ export async function sendTemplateMessage(
     },
   };
 
-  // Retry transient failures (rate limits / temporary Meta errors / network
-  // blips) with exponential backoff so a big batch doesn't lose recipients to a
-  // momentary rate-limit spike. Permanent errors return immediately.
-  const MAX_ATTEMPTS = 4;
+  // Retry transient throttles a couple of times with short backoff to smooth
+  // over brief spikes. If the throttle persists we return `throttled` (NOT
+  // `failed`), so the caller keeps the row pending and retries it later — a
+  // rate-limited recipient is never dropped. Permanent errors return `failed`
+  // immediately without wasting retries.
+  const MAX_ATTEMPTS = 3;
   let lastError = "Unknown error";
   let lastRaw: unknown;
+  let sawThrottle = false;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
@@ -413,31 +431,45 @@ export async function sendTemplateMessage(
       })?.error;
       const code = err?.code;
       // Include the Meta error code so undelivered reasons are diagnosable
-      // (e.g. 131049 = throttled to protect ecosystem engagement, 131026 =
-      // recipient not on WhatsApp / can't receive).
+      // (e.g. 131049 = per-recipient marketing cap, 131026 = recipient not on
+      // WhatsApp / can't receive).
       lastError = `${err?.message ?? `WhatsApp API error (HTTP ${res.status})`}${
         code ? ` (code ${code}${err?.error_subcode ? `/${err.error_subcode}` : ""})` : ""
       }`;
       lastRaw = data;
 
-      const retryable =
+      const throttled =
         res.status === 429 ||
         res.status >= 500 ||
-        (code !== undefined && RETRYABLE_META_CODES.has(code));
-      if (!retryable || attempt === MAX_ATTEMPTS) {
+        (code !== undefined && THROTTLE_META_CODES.has(code));
+
+      if (!throttled) {
+        // Permanent, recipient-specific failure — don't retry, don't keep pending.
         return { ok: false, status: "failed", error: lastError, raw: lastRaw };
       }
-    } catch (err) {
-      // Network error — always worth retrying.
-      lastError = err instanceof Error ? err.message : "Network error";
+
+      sawThrottle = true;
       if (attempt === MAX_ATTEMPTS) {
-        return { ok: false, status: "failed", error: lastError };
+        return { ok: false, status: "throttled", error: lastError, raw: lastRaw };
+      }
+    } catch (err) {
+      // Network error — transient by nature; treat like a throttle so the row
+      // stays pending and is retried rather than marked permanently failed.
+      lastError = err instanceof Error ? err.message : "Network error";
+      sawThrottle = true;
+      if (attempt === MAX_ATTEMPTS) {
+        return { ok: false, status: "throttled", error: lastError };
       }
     }
 
-    // Backoff: 0.5s, 1s, 2s (+ jitter) before the next attempt.
+    // Backoff: 0.5s, 1s (+ jitter) before the next attempt.
     await sleep(500 * 2 ** (attempt - 1) + Math.floor(attempt * 137));
   }
 
-  return { ok: false, status: "failed", error: lastError, raw: lastRaw };
+  return {
+    ok: false,
+    status: sawThrottle ? "throttled" : "failed",
+    error: lastError,
+    raw: lastRaw,
+  };
 }

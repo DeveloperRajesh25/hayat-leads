@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { sendCampaignSchema } from "@/lib/validation";
 import { isMediaHeader, resolveTemplate } from "@/lib/whatsapp";
-import { isWhatsappConfigured, publicConfig } from "@/lib/config";
+import { isWhatsappConfigured, publicConfig, serverConfig } from "@/lib/config";
 import type { Contact } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -160,6 +160,27 @@ export async function POST(req: Request) {
       .eq("id", campaign.id);
     return NextResponse.json({ error: messagesError.message }, { status: 500 });
   }
+
+  // Start a server-side auto-advance chain so the campaign finishes on its own,
+  // even if the admin closes the tab right after hitting Send. The browser loop
+  // (see lib/campaign-batch-client.ts) runs in parallel for live progress; both
+  // are safe together because each pending row is claimed exactly once.
+  const origin = new URL(req.url).origin;
+  after(async () => {
+    try {
+      await fetch(`${origin}/api/campaigns/${campaign.id}/send-batch?auto=1`, {
+        method: "POST",
+        headers: {
+          "x-internal-key": serverConfig.supabaseServiceRoleKey,
+          "x-advance-depth": "0",
+          "x-throttle-streak": "0",
+        },
+        cache: "no-store",
+      });
+    } catch {
+      // Best-effort; the browser loop / manual resume still complete the run.
+    }
+  });
 
   return NextResponse.json({
     campaignId: campaign.id,

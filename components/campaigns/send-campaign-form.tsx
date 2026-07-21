@@ -413,35 +413,74 @@ export function SendCampaignForm({
           </div>
         )}
 
-        {result && (
-          <div className="flex items-start gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>
-              <p className="font-medium">
-                {sending
-                  ? `Sending… ${result.sent + result.failed} of ${result.total}`
-                  : error
-                    ? `Stopped at ${result.sent + result.failed} of ${result.total}.`
-                    : "Campaign sent."}
-              </p>
-              <p className="text-emerald-700 dark:text-emerald-300/80">
-                {result.sent} accepted by WhatsApp · {result.failed} rejected of{" "}
-                {result.total}.
-              </p>
-              <p className="mt-1 text-xs text-emerald-700/80 dark:text-emerald-300/60">
-                “Accepted” means WhatsApp queued the message. Final delivery is
-                confirmed a moment later — the Sent/Failed numbers in the
-                history update automatically as each recipient is delivered or
-                rejected.
-              </p>
-              {result.failed > 0 && result.sampleError && (
-                <p className="mt-1 text-xs text-emerald-700/80 dark:text-emerald-300/60">
-                  Example error: {result.sampleError}
-                </p>
+        {result && (() => {
+          // Sent + Failed + Pending always equals Total, so the numbers here
+          // match the history table exactly — no more "80 of 462" confusion.
+          const pending = Math.max(
+            0,
+            result.pending ?? result.total - result.sent - result.failed,
+          );
+          const complete = !sending && pending === 0;
+          const paused = !sending && pending > 0; // stopped with work left = resumable
+          const tone = complete
+            ? "emerald"
+            : paused
+              ? "amber"
+              : "sky";
+          const toneClass = {
+            emerald:
+              "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300",
+            amber:
+              "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300",
+            sky: "bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300",
+          }[tone];
+          return (
+            <div className={`flex items-start gap-2 rounded-lg p-3 text-sm ${toneClass}`}>
+              {complete ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              ) : (
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               )}
+              <div>
+                <p className="font-medium">
+                  {sending
+                    ? result.throttled
+                      ? `Pacing for WhatsApp rate limit… ${result.sent + result.failed} of ${result.total} done`
+                      : `Sending… ${result.sent + result.failed} of ${result.total} done`
+                    : complete
+                      ? "Campaign complete — every contact processed."
+                      : `Paused — ${pending} of ${result.total} still to send.`}
+                </p>
+                <p className="opacity-90">
+                  {result.sent} sent · {result.failed} failed · {pending} pending
+                  {" "}of {result.total}.
+                </p>
+                {paused && (
+                  <p className="mt-1 text-xs opacity-80">
+                    The remaining {pending} keep sending automatically in the
+                    background. If they don’t finish, use “Resume sending” on this
+                    campaign in the history table — nobody already sent is
+                    contacted again.
+                  </p>
+                )}
+                {complete && (
+                  <p className="mt-1 text-xs opacity-80">
+                    “Sent” means WhatsApp accepted the message; final delivery is
+                    confirmed a moment later and the history updates automatically.
+                    {result.failed > 0
+                      ? " Use “Retry failed” in the history to re-send only the failures."
+                      : ""}
+                  </p>
+                )}
+                {result.failed > 0 && result.sampleError && (
+                  <p className="mt-1 text-xs opacity-80">
+                    Example error: {result.sampleError}
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Confirmation flow (sending real messages is irreversible) */}
         {!confirming ? (
