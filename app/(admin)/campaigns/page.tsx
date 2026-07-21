@@ -10,39 +10,13 @@ import { fetchApprovedTemplates } from "@/lib/whatsapp";
 import { PageHeader } from "@/components/admin/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { SendCampaignForm } from "@/components/campaigns/send-campaign-form";
-import { ResumeCampaignButton } from "@/components/campaigns/resume-campaign-button";
-import { RetryFailedButton } from "@/components/campaigns/retry-failed-button";
-import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
+import { CampaignHistoryCard } from "@/components/campaigns/campaign-history-card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Badge, type BadgeTone } from "@/components/ui/badge";
-import { Tooltip } from "@/components/ui/tooltip";
-import { formatDateTime } from "@/lib/utils";
 import { getCampaignStatsMap } from "@/lib/campaign-stats";
 import type { Campaign, Contact } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Campaigns" };
 export const dynamic = "force-dynamic";
-
-/**
- * The one place a campaign's headline status is decided — derived from the LIVE
- * message counts, never from a stored column, so the label always agrees with
- * the numbers next to it.
- */
-function deriveStatus(
-  campaignStatus: string,
-  pending: number,
-  accepted: number,
-  failed: number,
-): { label: string; tone: BadgeTone } {
-  if (pending > 0) {
-    return campaignStatus === "sending"
-      ? { label: "sending", tone: "info" }
-      : { label: "incomplete", tone: "warning" };
-  }
-  if (failed > 0 && accepted === 0) return { label: "failed", tone: "danger" };
-  if (failed > 0) return { label: "completed", tone: "success" };
-  return { label: "completed", tone: "success" };
-}
 
 export default async function CampaignsPage() {
   const { supabase } = await getSessionUser();
@@ -87,16 +61,14 @@ export default async function CampaignsPage() {
     .order("created_at", { ascending: false })
     .limit(30);
   const campaigns = (data ?? []) as Campaign[];
-
   const campaignIds = campaigns.map((c) => c.id);
 
   // LIVE delivery breakdown per campaign, counted straight from the messages
-  // table (the single source of truth). Everything shown below comes from here
-  // — no stored/denormalized counters that could drift.
+  // table (single source of truth). Everything below reads from here.
   const statsByCampaign = await getCampaignStatsMap(campaignIds);
 
-  // Distinct failure reasons per campaign, so the history table can explain
-  // why sends failed instead of just showing a count.
+  // Distinct failure reasons per campaign, so a campaign can explain WHY it
+  // failed rather than just showing a count.
   const { data: failedMessages } = campaignIds.length
     ? await supabase
         .from("messages")
@@ -116,11 +88,11 @@ export default async function CampaignsPage() {
     <div>
       <PageHeader
         title="Campaigns"
-        description="Send your WhatsApp template to selected contacts and track delivery."
+        description="Send your WhatsApp template to selected contacts and track every delivery live."
       />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <div className="lg:col-span-2">
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-12">
+        <div className="xl:col-span-5">
           <SendCampaignForm
             contacts={contacts}
             alreadyMessagedIds={alreadyMessagedIds}
@@ -131,12 +103,22 @@ export default async function CampaignsPage() {
           />
         </div>
 
-        <div className="lg:col-span-3">
-          <Card>
-            <div className="border-b border-slate-100 p-5 dark:border-slate-800">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">
-                Campaign history
-              </h2>
+        <div className="xl:col-span-7">
+          <Card className="overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">
+                  Campaign history
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Accepted, delivered, read, failed and pending — counted live.
+                </p>
+              </div>
+              {campaigns.length > 0 && (
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  {campaigns.length} shown
+                </span>
+              )}
             </div>
             <CardContent className="p-0">
               {campaigns.length === 0 ? (
@@ -148,121 +130,31 @@ export default async function CampaignsPage() {
                   />
                 </div>
               ) : (
-                <Table>
-                  <THead>
-                    <TR className="hover:bg-transparent">
-                      <TH>Campaign</TH>
-                      <TH className="text-center">Contacts</TH>
-                      <TH className="text-center">
-                        <Tooltip content="Accepted by WhatsApp (sent, delivered or read)">
-                          <span className="underline decoration-dotted">
-                            Accepted
-                          </span>
-                        </Tooltip>
-                      </TH>
-                      <TH className="text-center">
-                        <Tooltip content="Confirmed delivered to the handset (delivered or read)">
-                          <span className="underline decoration-dotted">
-                            Delivered
-                          </span>
-                        </Tooltip>
-                      </TH>
-                      <TH className="text-center">Failed</TH>
-                      <TH className="text-center">Pending</TH>
-                      <TH>Status</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {campaigns.map((c) => {
-                      // Every number here is the LIVE count from the messages
-                      // table: accepted + failed + pending === contacts, always.
-                      const st = statsByCampaign.get(c.id) ?? {
-                        total: c.total_contacts,
-                        pending: 0,
-                        sent: 0,
-                        delivered: 0,
-                        read: 0,
-                        failed: 0,
-                        accepted: 0,
-                        deliveredTotal: 0,
-                      };
-                      const status = deriveStatus(
-                        c.status,
-                        st.pending,
-                        st.accepted,
-                        st.failed,
-                      );
-                      const reasons = failureReasonsByCampaign.get(c.id);
-                      const badge = (
-                        <Badge tone={status.tone}>{status.label}</Badge>
-                      );
-                      const badgeWithTooltip = reasons?.length ? (
-                        <Tooltip
-                          content={
-                            <ul className="space-y-1">
-                              {reasons.map((r, i) => (
-                                <li key={i}>{r}</li>
-                              ))}
-                            </ul>
-                          }
-                        >
-                          {badge}
-                        </Tooltip>
-                      ) : (
-                        badge
-                      );
-                      return (
-                        <TR key={c.id}>
-                          <TD>
-                            <div className="font-medium text-slate-900 dark:text-slate-100">
-                              {c.name}
-                            </div>
-                            <div className="text-xs text-slate-400 dark:text-slate-500">
-                              {formatDateTime(c.sent_at ?? c.created_at)}
-                            </div>
-                          </TD>
-                          <TD className="text-center tabular-nums">
-                            {st.total}
-                          </TD>
-                          <TD className="text-center font-medium tabular-nums text-sky-600 dark:text-sky-400">
-                            {st.accepted}
-                          </TD>
-                          <TD className="text-center font-medium tabular-nums text-indigo-600 dark:text-indigo-400">
-                            {st.deliveredTotal}
-                          </TD>
-                          <TD className="text-center font-medium tabular-nums text-red-600 dark:text-red-400">
-                            {st.failed}
-                          </TD>
-                          <TD className="text-center font-medium tabular-nums text-amber-600 dark:text-amber-400">
-                            {st.pending}
-                          </TD>
-                          <TD>
-                            {st.pending > 0 || st.failed > 0 ? (
-                              <div className="flex flex-col items-start gap-1.5">
-                                {badgeWithTooltip}
-                                {st.pending > 0 && (
-                                  <ResumeCampaignButton
-                                    campaignId={c.id}
-                                    total={st.total}
-                                  />
-                                )}
-                                {st.failed > 0 && (
-                                  <RetryFailedButton
-                                    campaignId={c.id}
-                                    failed={st.failed}
-                                    total={st.total}
-                                  />
-                                )}
-                              </div>
-                            ) : (
-                              badgeWithTooltip
-                            )}
-                          </TD>
-                        </TR>
-                      );
-                    })}
-                  </TBody>
-                </Table>
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {campaigns.map((c) => {
+                    const m = statsByCampaign.get(c.id) ?? {
+                      total: c.total_contacts,
+                      pending: 0,
+                      sent: 0,
+                      delivered: 0,
+                      read: 0,
+                      failed: 0,
+                      accepted: 0,
+                      deliveredTotal: 0,
+                    };
+                    return (
+                      <CampaignHistoryCard
+                        key={c.id}
+                        campaignId={c.id}
+                        name={c.name}
+                        dateISO={c.sent_at ?? c.created_at}
+                        campaignStatus={c.status}
+                        metrics={m}
+                        failureReasons={failureReasonsByCampaign.get(c.id) ?? []}
+                      />
+                    );
+                  })}
+                </div>
               )}
             </CardContent>
           </Card>
