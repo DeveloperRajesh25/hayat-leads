@@ -1,0 +1,38 @@
+name: Advance WhatsApp campaigns
+
+# Backstop that finishes any campaign left "sending" with pending recipients.
+# The app already self-advances server-side after each send; this just re-ignites
+# anything that stalled (cold start, deploy mid-run, a rate-limit pause). Safe to
+# run as often as you like — every recipient is claimed exactly once, so nobody
+# is ever messaged twice.
+
+on:
+  schedule:
+    # Every 5 minutes (GitHub's shortest reliable interval; may drift a few
+    # minutes under load — fine for a backstop).
+    - cron: "*/5 * * * *"
+  # Lets you trigger a run by hand from the Actions tab.
+  workflow_dispatch: {}
+
+# If a run is still going when the next fires, skip rather than pile up.
+concurrency:
+  group: advance-campaigns
+  cancel-in-progress: false
+
+jobs:
+  advance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Re-ignite pending campaigns
+        env:
+          # Set these in: repo Settings -> Secrets and variables -> Actions.
+          #  - CRON_SECRET (secret): the SAME value as CRON_SECRET in Vercel.
+          #  - APP_URL (variable, optional): your deployment URL. Defaults to
+          #    the production domain below if unset.
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://hayat-leads.vercel.app' }}
+        run: |
+          curl -fsS --retry 2 --retry-delay 5 -X POST \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/advance-campaigns"
+          echo "Advance ping sent to ${APP_URL}"

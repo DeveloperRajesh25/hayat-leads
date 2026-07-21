@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/advance-campaigns",
-      "schedule": "*/2 * * * *"
-    }
-  ]
-}
