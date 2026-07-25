@@ -93,7 +93,7 @@ export default async function DashboardPage() {
               : "Confirmed delivered / read"
           }
           href="/campaigns"
-          downloadHref="/api/export?type=messages"
+          downloadHref="/api/export?type=delivered"
           resetKey="delivered"
         />
         <StatCard
@@ -103,7 +103,7 @@ export default async function DashboardPage() {
           tone="red"
           hint="Not delivered — check header image / number"
           href="/campaigns"
-          downloadHref="/api/export?type=messages"
+          downloadHref="/api/export?type=failed"
           resetKey="failed"
         />
         <StatCard

@@ -9,6 +9,8 @@ export const runtime = "nodejs";
 const EXPORT_TYPES = [
   "contacts",
   "messages",
+  "delivered",
+  "failed",
   "pending",
   "interested",
   "not_interested",
@@ -86,6 +88,64 @@ export async function GET(req: Request) {
         }),
       );
       filename = "messages-sent.csv";
+      break;
+    }
+
+    case "delivered": {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("phone, status, created_at, contact:contacts(name)")
+        .in("status", ["delivered", "read"])
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      type Row = {
+        phone: string;
+        status: string;
+        created_at: string;
+        contact: { name: string } | { name: string }[] | null;
+      };
+      csv = toCsv(
+        ["Name", "Phone", "Status", "Sent"],
+        ((data ?? []) as Row[]).map((m) => {
+          const contact = Array.isArray(m.contact) ? m.contact[0] : m.contact;
+          return [
+            contact?.name ?? "—",
+            `+${m.phone}`,
+            m.status,
+            formatDateTime(m.created_at),
+          ];
+        }),
+      );
+      filename = "delivered-messages.csv";
+      break;
+    }
+
+    case "failed": {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("phone, error, created_at, contact:contacts(name)")
+        .eq("status", "failed")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      type Row = {
+        phone: string;
+        error: string | null;
+        created_at: string;
+        contact: { name: string } | { name: string }[] | null;
+      };
+      csv = toCsv(
+        ["Name", "Phone", "Error", "Sent"],
+        ((data ?? []) as Row[]).map((m) => {
+          const contact = Array.isArray(m.contact) ? m.contact[0] : m.contact;
+          return [
+            contact?.name ?? "—",
+            `+${m.phone}`,
+            m.error ?? "",
+            formatDateTime(m.created_at),
+          ];
+        }),
+      );
+      filename = "failed-messages.csv";
       break;
     }
 
