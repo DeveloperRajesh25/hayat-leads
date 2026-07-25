@@ -24,7 +24,7 @@ export type StatKey = (typeof RESETTABLE_STATS)[number];
  * the `stat_resets` table not existing yet (returns an empty map) so the
  * dashboard keeps working before the migration is applied.
  */
-async function getResets(supabase: Client): Promise<Partial<Record<StatKey, string>>> {
+export async function getResets(supabase: Client): Promise<Partial<Record<StatKey, string>>> {
   const { data, error } = await supabase
     .from("stat_resets")
     .select("stat_key, reset_at");

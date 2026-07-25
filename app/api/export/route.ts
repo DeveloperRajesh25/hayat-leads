@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { toCsv } from "@/lib/csv";
 import { formatDateTime } from "@/lib/utils";
+import { getResets, type StatKey } from "@/lib/stats";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,6 +25,19 @@ function isExportType(value: string | null): value is ExportType {
   return !!value && (EXPORT_TYPES as readonly string[]).includes(value);
 }
 
+/** Maps an export type to the dashboard stat key whose reset baseline it must respect. */
+const EXPORT_TYPE_TO_STAT_KEY: Record<ExportType, StatKey | null> = {
+  contacts: "totalContacts",
+  messages: "messagesSent",
+  delivered: "delivered",
+  failed: "failed",
+  pending: "pending",
+  interested: "interested",
+  not_interested: "notInterested",
+  converted: "converted",
+  responses: "totalResponses",
+};
+
 /**
  * CSV export for the dashboard's per-stat download buttons. Returns a plain
  * text/csv attachment — no JSON — so a plain `<a href download>` works.
@@ -39,15 +53,23 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Invalid export type." }, { status: 400 });
   }
 
+  // A card's download must only include what the card itself is currently
+  // counting — so it respects that stat's "reset to zero" baseline too.
+  const resets = await getResets(supabase);
+  const statKey = EXPORT_TYPE_TO_STAT_KEY[type];
+  const resetAt = statKey ? resets[statKey] : undefined;
+
   let filename = `${type}.csv`;
   let csv: string;
 
   switch (type) {
     case "contacts": {
-      const { data, error } = await supabase
+      let query = supabase
         .from("contacts")
         .select("name, phone, source, created_at")
         .order("created_at", { ascending: false });
+      if (resetAt) query = query.gt("created_at", resetAt);
+      const { data, error } = await query;
       if (error) throw error;
       csv = toCsv(
         ["Name", "Phone", "Source", "Added"],
@@ -63,11 +85,13 @@ export async function GET(req: Request) {
     }
 
     case "messages": {
-      const { data, error } = await supabase
+      let query = supabase
         .from("messages")
         .select("phone, status, created_at, contact:contacts(name)")
         .in("status", ["sent", "delivered", "read"])
         .order("created_at", { ascending: false });
+      if (resetAt) query = query.gt("created_at", resetAt);
+      const { data, error } = await query;
       if (error) throw error;
       type Row = {
         phone: string;
@@ -92,11 +116,13 @@ export async function GET(req: Request) {
     }
 
     case "delivered": {
-      const { data, error } = await supabase
+      let query = supabase
         .from("messages")
         .select("phone, status, created_at, contact:contacts(name)")
         .in("status", ["delivered", "read"])
         .order("created_at", { ascending: false });
+      if (resetAt) query = query.gt("created_at", resetAt);
+      const { data, error } = await query;
       if (error) throw error;
       type Row = {
         phone: string;
@@ -121,11 +147,13 @@ export async function GET(req: Request) {
     }
 
     case "failed": {
-      const { data, error } = await supabase
+      let query = supabase
         .from("messages")
         .select("phone, error, created_at, contact:contacts(name)")
         .eq("status", "failed")
         .order("created_at", { ascending: false });
+      if (resetAt) query = query.gt("created_at", resetAt);
+      const { data, error } = await query;
       if (error) throw error;
       type Row = {
         phone: string;
@@ -150,11 +178,14 @@ export async function GET(req: Request) {
     }
 
     case "pending": {
+      let contactsQuery = supabase.from("contacts").select("name, phone, created_at");
+      let responsesQuery = supabase.from("responses").select("phone");
+      if (resetAt) {
+        contactsQuery = contactsQuery.gt("created_at", resetAt);
+        responsesQuery = responsesQuery.gt("created_at", resetAt);
+      }
       const [{ data: contacts, error: contactsError }, { data: responses, error: responsesError }] =
-        await Promise.all([
-          supabase.from("contacts").select("name, phone, created_at"),
-          supabase.from("responses").select("phone"),
-        ]);
+        await Promise.all([contactsQuery, responsesQuery]);
       if (contactsError) throw contactsError;
       if (responsesError) throw responsesError;
       const responded = new Set((responses ?? []).map((r) => r.phone));
@@ -169,11 +200,13 @@ export async function GET(req: Request) {
 
     case "interested":
     case "not_interested": {
-      const { data, error } = await supabase
+      let query = supabase
         .from("responses")
         .select("name, phone, requirement_details, converted, created_at")
         .eq("interest_status", type)
         .order("created_at", { ascending: false });
+      if (resetAt) query = query.gt("created_at", resetAt);
+      const { data, error } = await query;
       if (error) throw error;
       csv = toCsv(
         ["Name", "Phone", "Requirement", "Converted", "Submitted"],
@@ -190,11 +223,13 @@ export async function GET(req: Request) {
     }
 
     case "converted": {
-      const { data, error } = await supabase
+      let query = supabase
         .from("responses")
-        .select("name, phone, requirement_details, converted_at")
+        .select("name, phone, requirement_details, converted_at, created_at")
         .eq("converted", true)
         .order("converted_at", { ascending: false });
+      if (resetAt) query = query.gt("created_at", resetAt);
+      const { data, error } = await query;
       if (error) throw error;
       csv = toCsv(
         ["Name", "Phone", "Requirement", "Converted at"],
@@ -210,10 +245,12 @@ export async function GET(req: Request) {
     }
 
     case "responses": {
-      const { data, error } = await supabase
+      let query = supabase
         .from("responses")
         .select("name, phone, interest_status, requirement_details, converted, created_at")
         .order("created_at", { ascending: false });
+      if (resetAt) query = query.gt("created_at", resetAt);
+      const { data, error } = await query;
       if (error) throw error;
       csv = toCsv(
         ["Name", "Phone", "Interest", "Requirement", "Converted", "Submitted"],
