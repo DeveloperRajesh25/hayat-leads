@@ -84,13 +84,15 @@ export async function DELETE(req: Request) {
     );
   }
 
-  const { error } = await supabase
-    .from("contacts")
-    .delete()
-    .in("id", parsed.data.ids);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  // Chunked: `.in()` filters are sent as query-string params, and a large
+  // selection can exceed the API gateway's URL length limit ("Bad Request").
+  const DELETE_CHUNK = 150;
+  for (let i = 0; i < parsed.data.ids.length; i += DELETE_CHUNK) {
+    const idsChunk = parsed.data.ids.slice(i, i + DELETE_CHUNK);
+    const { error } = await supabase.from("contacts").delete().in("id", idsChunk);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ ok: true, deleted: parsed.data.ids.length });

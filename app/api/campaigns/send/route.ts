@@ -88,21 +88,27 @@ export async function POST(req: Request) {
     );
   }
 
-  // Load recipients — restricted to the selected contact ids.
-  const { data: contactsData, error: contactsError } = await supabase
-    .from("contacts")
-    .select("id, name, phone, token")
-    .in("id", parsed.data.contactIds)
-    .order("created_at", { ascending: true });
+  // Load recipients — restricted to the selected contact ids. Chunked because
+  // Supabase builds `.in()` as a GET request with the ids in the query string;
+  // a large selection (hundreds of contacts) can exceed the URL length limit
+  // and come back as a bare "Bad Request" from the API gateway.
+  const CONTACT_LOOKUP_CHUNK = 150;
+  const contactsData: Pick<Contact, "id" | "name" | "phone" | "token">[] = [];
+  for (let i = 0; i < parsed.data.contactIds.length; i += CONTACT_LOOKUP_CHUNK) {
+    const idsChunk = parsed.data.contactIds.slice(i, i + CONTACT_LOOKUP_CHUNK);
+    const { data, error } = await supabase
+      .from("contacts")
+      .select("id, name, phone, token")
+      .in("id", idsChunk)
+      .order("created_at", { ascending: true });
 
-  if (contactsError) {
-    return NextResponse.json({ error: contactsError.message }, { status: 500 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    contactsData.push(...((data ?? []) as Pick<Contact, "id" | "name" | "phone" | "token">[]));
   }
 
-  const contacts = (contactsData ?? []) as Pick<
-    Contact,
-    "id" | "name" | "phone" | "token"
-  >[];
+  const contacts = contactsData;
 
   if (contacts.length === 0) {
     return NextResponse.json(
