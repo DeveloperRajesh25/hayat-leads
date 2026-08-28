@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { getSessionUser } from "@/lib/auth";
+import { getRlsClient } from "@/lib/auth";
 import { PageHeader } from "@/components/admin/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +24,7 @@ export default async function LeadsPage({
   searchParams: Promise<{ status?: string; q?: string; page?: string }>;
 }) {
   const sp = await searchParams;
-  const { supabase } = await getSessionUser();
+  const supabase = await getRlsClient();
 
   const status: StatusFilter | null =
     sp.status === "interested" ||

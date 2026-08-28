@@ -13,7 +13,7 @@ import {
   CheckCheck,
   XCircle,
 } from "lucide-react";
-import { getSessionUser } from "@/lib/auth";
+import { getRlsClient } from "@/lib/auth";
 import { getDashboardStats } from "@/lib/stats";
 import { PageHeader } from "@/components/admin/page-header";
 import { StatCard } from "@/components/ui/stat-card";
@@ -31,15 +31,18 @@ export const metadata: Metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const { supabase } = await getSessionUser();
-  const stats = await getDashboardStats(supabase);
+  const supabase = await getRlsClient();
 
-  const { data: recentRaw } = await supabase
-    .from("responses")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(5);
-  const recent = (recentRaw ?? []) as LeadResponse[];
+  // The stat counts and the recent-responses list are independent.
+  const [stats, recentRes] = await Promise.all([
+    getDashboardStats(supabase),
+    supabase
+      .from("responses")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(5),
+  ]);
+  const recent = (recentRes.data ?? []) as LeadResponse[];
 
   return (
     <div>

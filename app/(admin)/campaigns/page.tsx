@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Send } from "lucide-react";
-import { getSessionUser } from "@/lib/auth";
+import { getRlsClient } from "@/lib/auth";
 import {
   isWhatsappConfigured,
   isWhatsappTemplateListingConfigured,
@@ -19,63 +19,73 @@ export const metadata: Metadata = { title: "Campaigns" };
 export const dynamic = "force-dynamic";
 
 export default async function CampaignsPage() {
-  const { supabase } = await getSessionUser();
+  const supabase = await getRlsClient();
 
-  // Approved templates on the WABA — the campaign form lets you pick any of
-  // them, so this list is read live rather than pinned to one env var.
-  const templateResult = isWhatsappTemplateListingConfigured()
-    ? await fetchApprovedTemplates()
-    : {
-        ok: false,
-        templates: [],
-        error:
-          "Set WHATSAPP_BUSINESS_ACCOUNT_ID in your environment to list your WhatsApp templates.",
-      };
+  // These four are independent, so they go out together. Awaiting them one
+  // after another meant four serial round-trips to a database in another
+  // region before the page could render anything.
+  const [templateResult, contactsRes, sentMessagesRes, campaignsRes] =
+    await Promise.all([
+      // Approved templates on the WABA — the campaign form lets you pick any
+      // of them, so this list is read live rather than pinned to one env var.
+      isWhatsappTemplateListingConfigured()
+        ? fetchApprovedTemplates()
+        : Promise.resolve({
+            ok: false,
+            templates: [],
+            error:
+              "Set WHATSAPP_BUSINESS_ACCOUNT_ID in your environment to list your WhatsApp templates.",
+          }),
+      supabase
+        .from("contacts")
+        .select("id, name, phone")
+        .order("created_at", { ascending: false }),
+      // Contacts who already received a successful message in a previous
+      // campaign — unselected by default when composing a new one.
+      supabase
+        .from("messages")
+        .select("contact_id")
+        .in("status", ["sent", "delivered", "read"]),
+      supabase
+        .from("campaigns")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(30),
+    ]);
 
-  const { data: contactsData } = await supabase
-    .from("contacts")
-    .select("id, name, phone")
-    .order("created_at", { ascending: false });
-  const contacts = (contactsData ?? []) as Pick<
+  const contacts = (contactsRes.data ?? []) as Pick<
     Contact,
     "id" | "name" | "phone"
   >[];
 
-  // Contacts who already received a successful message in a previous
-  // campaign — unselected by default when composing a new one.
-  const { data: sentMessages } = await supabase
-    .from("messages")
-    .select("contact_id")
-    .in("status", ["sent", "delivered", "read"]);
   const alreadyMessagedIds = Array.from(
     new Set(
-      (sentMessages ?? [])
+      (sentMessagesRes.data ?? [])
         .map((m) => m.contact_id)
         .filter((id): id is string => !!id),
     ),
   );
 
-  const { data } = await supabase
-    .from("campaigns")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(30);
-  const campaigns = (data ?? []) as Campaign[];
+  const campaigns = (campaignsRes.data ?? []) as Campaign[];
   const campaignIds = campaigns.map((c) => c.id);
 
-  // LIVE delivery breakdown per campaign, counted straight from the messages
-  // table (single source of truth). Everything below reads from here.
-  const statsByCampaign = await getCampaignStatsMap(campaignIds);
-
-  // Distinct failure reasons per campaign, so a campaign can explain WHY it
-  // failed rather than just showing a count.
-  const { data: failedMessages } = campaignIds.length
-    ? await supabase
-        .from("messages")
-        .select("campaign_id, error")
-        .eq("status", "failed")
-        .in("campaign_id", campaignIds)
-    : { data: [] };
+  // Second wave: both of these need the campaign ids from above, but not each
+  // other, so they also go out in parallel.
+  //  - the LIVE delivery breakdown per campaign, counted straight from the
+  //    messages table (single source of truth) — everything below reads from it
+  //  - distinct failure reasons per campaign, so a campaign can explain WHY it
+  //    failed rather than just showing a count
+  const [statsByCampaign, failedRes] = await Promise.all([
+    getCampaignStatsMap(campaignIds),
+    campaignIds.length
+      ? supabase
+          .from("messages")
+          .select("campaign_id, error")
+          .eq("status", "failed")
+          .in("campaign_id", campaignIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const failedMessages = failedRes.data;
   const failureReasonsByCampaign = new Map<string, string[]>();
   for (const m of failedMessages ?? []) {
     if (!m.campaign_id || !m.error) continue;

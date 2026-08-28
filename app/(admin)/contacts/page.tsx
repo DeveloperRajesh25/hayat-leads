@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getSessionUser } from "@/lib/auth";
+import { getRlsClient } from "@/lib/auth";
 import { PageHeader } from "@/components/admin/page-header";
 import { Card } from "@/components/ui/card";
 import { CsvUploader } from "@/components/contacts/csv-uploader";
@@ -13,19 +13,21 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 100;
 
 export default async function ContactsPage() {
-  const { supabase } = await getSessionUser();
+  const supabase = await getRlsClient();
 
-  const { count } = await supabase
-    .from("contacts")
-    .select("*", { count: "exact", head: true });
+  // The count and the first page are independent — fetch them together rather
+  // than paying two serial cross-region round-trips.
+  const [countRes, pageRes] = await Promise.all([
+    supabase.from("contacts").select("*", { count: "exact", head: true }),
+    supabase
+      .from("contacts")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(PAGE_SIZE),
+  ]);
 
-  const { data } = await supabase
-    .from("contacts")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(PAGE_SIZE);
-  const contacts = (data ?? []) as Contact[];
-  const total = count ?? 0;
+  const contacts = (pageRes.data ?? []) as Contact[];
+  const total = countRes.count ?? 0;
 
   return (
     <div>
