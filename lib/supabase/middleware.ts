@@ -59,9 +59,23 @@ export async function updateSession(request: NextRequest) {
   );
 
   // IMPORTANT: do not run code between createServerClient and getUser().
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Guard against a slow/unreachable Supabase auth server hanging the whole
+  // middleware invocation (Vercel kills it at ~25s with MIDDLEWARE_INVOCATION_TIMEOUT,
+  // taking the entire site down). On timeout, treat the request as
+  // unauthenticated (protected routes still redirect to /login) rather than
+  // blocking every page in the app.
+  let user = null;
+  try {
+    const { data } = await Promise.race([
+      supabase.auth.getUser(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("supabase auth timeout")), 8000),
+      ),
+    ]);
+    user = data.user;
+  } catch {
+    user = null;
+  }
 
   const { pathname } = request.nextUrl;
 
