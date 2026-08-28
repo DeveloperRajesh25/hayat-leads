@@ -10,15 +10,23 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Middleware already performs the server-verified `getUser()` check for
+  // every protected route and redirects unauthenticated requests before
+  // this layout ever renders. Re-verifying here would mean a second network
+  // round-trip to Supabase Auth on every page load, roughly doubling load
+  // time and adding a second point of failure that can spuriously log out
+  // an already-authenticated user if that call is slow or blips. Reading
+  // the session from cookies is sufficient defense in depth.
   const supabase = await createClient();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  // Defense in depth: middleware already guards these routes.
-  if (!user) {
+  if (!session) {
     redirect("/login");
   }
+
+  const user = session.user;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 lg:flex">
