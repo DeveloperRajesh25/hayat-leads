@@ -13,11 +13,12 @@ export const config = {
   matcher: [
     /*
      * Match all request paths except:
+     *  - api            (every protected route handler authenticates itself and
+     *                    returns its own 401; running auth here too meant a
+     *                    second round-trip to Supabase on every single fetch)
      *  - _next/static, _next/image  (build assets)
      *  - favicon and common static files
-     * This still covers the public form & webhook so the session is refreshed,
-     * while the auth checks inside updateSession only act on protected paths.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

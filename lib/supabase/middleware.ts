@@ -12,21 +12,38 @@ const PROTECTED_PREFIXES = [
   "/leads",
 ];
 
-/** Admin-only API namespaces (the public form + webhook stay open). */
-const PROTECTED_API_PREFIXES = [
-  "/api/contacts",
-  "/api/campaigns",
-  "/api/stats",
-  "/api/leads",
-  "/api/export",
-];
-
 function isProtectedPage(pathname: string): boolean {
   return PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
-function isProtectedApi(pathname: string): boolean {
-  return PROTECTED_API_PREFIXES.some((p) => pathname.startsWith(p));
+/**
+ * Requests where the answer to "is this user signed in?" changes the response.
+ * Everything else (the public form, /privacy, static assets) is served without
+ * touching Supabase at all.
+ *
+ * API routes are deliberately excluded: every protected route handler already
+ * calls `getSessionUser()` and returns its own 401, so gating them here only
+ * added a second, redundant round-trip to the Auth server on every fetch.
+ */
+function needsSession(pathname: string): boolean {
+  return isProtectedPage(pathname) || pathname === "/" || pathname === "/login";
+}
+
+/**
+ * Carry the refreshed Supabase auth cookies onto a response we build ourselves.
+ *
+ * This is essential. `getUser()` may rotate the refresh token, in which case
+ * the new tokens exist only on `supabaseResponse`. Returning a bare
+ * `NextResponse.redirect()` would drop them while the old refresh token has
+ * already been consumed server-side, killing the session and logging the admin
+ * out on their next request.
+ */
+function withSessionCookies(
+  response: NextResponse,
+  source: NextResponse,
+): NextResponse {
+  source.cookies.getAll().forEach((cookie) => response.cookies.set(cookie));
+  return response;
 }
 
 /**
@@ -35,6 +52,13 @@ function isProtectedApi(pathname: string): boolean {
  *  - Authenticated users hitting /login -> redirected to /dashboard.
  */
 export async function updateSession(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Nothing on this path depends on the session — skip the Auth round-trip.
+  if (!needsSession(pathname)) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -59,44 +83,40 @@ export async function updateSession(request: NextRequest) {
   );
 
   // IMPORTANT: do not run code between createServerClient and getUser().
-  // Guard against a slow/unreachable Supabase auth server hanging the whole
-  // middleware invocation (Vercel kills it at ~25s with MIDDLEWARE_INVOCATION_TIMEOUT,
-  // taking the entire site down). On timeout, treat the request as
-  // unauthenticated (protected routes still redirect to /login) rather than
-  // blocking every page in the app.
+  //
+  // The timeout only exists so a hung Auth server cannot burn the whole 25s
+  // middleware budget and take the site down with MIDDLEWARE_INVOCATION_TIMEOUT.
+  // On timeout we must NOT treat the admin as signed out: `resolved` stays
+  // false and we fall through to the page, whose own `getUser()` is the
+  // authoritative check. Redirecting to /login here would turn a slow network
+  // into a spurious logout.
   let user = null;
+  let resolved = true;
   try {
     const { data } = await Promise.race([
       supabase.auth.getUser(),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("supabase auth timeout")), 5000),
+        setTimeout(() => reject(new Error("supabase auth timeout")), 10_000),
       ),
     ]);
     user = data.user;
   } catch {
-    user = null;
-  }
-
-  const { pathname } = request.nextUrl;
-
-  // Admin API routes: respond with JSON 401 rather than an HTML redirect.
-  if (!user && isProtectedApi(pathname)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    resolved = false;
   }
 
   // Admin pages: bounce to the login screen, preserving the intended path.
-  if (!user && isProtectedPage(pathname)) {
+  if (!user && resolved && isProtectedPage(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(url);
+    return withSessionCookies(NextResponse.redirect(url), supabaseResponse);
   }
 
   if (user && (pathname === "/login" || pathname === "/")) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     url.search = "";
-    return NextResponse.redirect(url);
+    return withSessionCookies(NextResponse.redirect(url), supabaseResponse);
   }
 
   return supabaseResponse;
